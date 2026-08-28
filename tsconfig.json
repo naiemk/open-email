@@ -11,5 +11,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["client/**/*.ts", "relayer/**/*.ts"]
+  "include": ["client/**/*.ts", "relayer/**/*.ts", "node/**/*.ts", "dal/**/*.ts"]
 }

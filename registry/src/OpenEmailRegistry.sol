@@ -17,6 +17,7 @@ contract OpenEmailRegistry {
 
     bytes32 private constant REGISTER_ACTION = bytes32("register");
     bytes32 private constant OPT_IN_ACTION = bytes32("optIn");
+    bytes32 private constant OPT_OUT_ACTION = bytes32("optOut");
     uint256 private constant X25519_PUBKEY_LENGTH = 32;
 
     struct NameRecord {
@@ -31,6 +32,7 @@ contract OpenEmailRegistry {
     mapping(bytes32 nameHash => NameRecord) private _names;
     mapping(bytes32 nodeKey => bool) private _nodes;
     mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedInAt)) private _optedInAt;
+    mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedOutAt)) private _optedOutAt;
 
     function registerChallenge(string calldata name, bytes calldata dekPublic, bytes calldata wrappedDek)
         public
@@ -108,8 +110,33 @@ contract OpenEmailRegistry {
         ++rec.nonce;
     }
 
+    function optOutChallenge(string calldata name, bytes32 nodeKey) public view returns (bytes memory) {
+        return abi.encode(
+            block.chainid, address(this), OPT_OUT_ACTION, keccak256(bytes(name)), nodeKey, _names[_nameHash(name)].nonce
+        );
+    }
+
+    function optOut(string calldata name, bytes32 nodeKey, WebAuthn.WebAuthnAuth calldata auth) external {
+        bytes32 nameHash = _nameHash(name);
+        NameRecord storage rec = _names[nameHash];
+        if (!rec.exists) revert UnknownName();
+        if (!_nodes[nodeKey]) revert UnknownNode();
+
+        bytes memory challenge = optOutChallenge(name, nodeKey);
+        if (!WebAuthn.verify(challenge, auth, rec.qx, rec.qy)) revert InvalidPasskey();
+
+        _optedOutAt[nameHash][nodeKey] = uint64(block.timestamp);
+        ++rec.nonce;
+    }
+
     function isOptedIn(string calldata name, bytes32 nodeKey) external view returns (bool) {
-        return _optedInAt[_nameHash(name)][nodeKey] != 0;
+        uint64 inAt = _optedInAt[_nameHash(name)][nodeKey];
+        uint64 outAt = _optedOutAt[_nameHash(name)][nodeKey];
+        return inAt != 0 && inAt > outAt;
+    }
+
+    function optedOutAt(string calldata name, bytes32 nodeKey) external view returns (uint64) {
+        return _optedOutAt[_nameHash(name)][nodeKey];
     }
 
     function _requireDotless(string calldata name) internal pure {

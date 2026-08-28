@@ -96,6 +96,48 @@ export const registryAbi = [
     ],
     outputs: [],
   },
+  {
+    type: "function",
+    name: "optOutChallenge",
+    stateMutability: "view",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "nodeKey", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "bytes" }],
+  },
+  {
+    type: "function",
+    name: "optOut",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "nodeKey", type: "bytes32" },
+      {
+        name: "auth",
+        type: "tuple",
+        components: [
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+          { name: "challengeIndex", type: "uint256" },
+          { name: "typeIndex", type: "uint256" },
+          { name: "authenticatorData", type: "bytes" },
+          { name: "clientDataJSON", type: "string" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "optedOutAt",
+    stateMutability: "view",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "nodeKey", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "uint64" }],
+  },
   { type: "error", name: "DottedName", inputs: [] },
   { type: "error", name: "EmptyName", inputs: [] },
   { type: "error", name: "NameTaken", inputs: [] },

@@ -99,6 +99,19 @@ contract OpenEmailRegistryTest is PasskeySigner {
         assertFalse(registry.isOptedIn("alice", nodeKey));
     }
 
+    function test_opt_out_ends_authorization_with_timestamp() public {
+        _registerAlice();
+        bytes32 nodeKey = keccak256("node-a");
+        registry.registerNode(nodeKey);
+        registry.optIn("alice", nodeKey, _sign(registry.optInChallenge("alice", nodeKey)));
+        assertTrue(registry.isOptedIn("alice", nodeKey));
+
+        vm.warp(block.timestamp + 60);
+        registry.optOut("alice", nodeKey, _sign(registry.optOutChallenge("alice", nodeKey)));
+        assertFalse(registry.isOptedIn("alice", nodeKey));
+        assertGt(registry.optedOutAt("alice", nodeKey), 0);
+    }
+
     function _registerAlice() internal {
         bytes memory challenge = registry.registerChallenge("alice", DEK_PUBLIC, WRAPPED_DEK);
         registry.register("alice", bytes32(qx), bytes32(qy), DEK_PUBLIC, WRAPPED_DEK, _sign(challenge));

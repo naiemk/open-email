@@ -9,7 +9,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
+import { foundry, type Chain } from "viem/chains";
 import { registryAbi } from "./abi.ts";
 
 export type RelayerConfig = {
@@ -17,6 +17,7 @@ export type RelayerConfig = {
   registry: Hex;
   privateKey: Hex;
   port?: number;
+  chain?: Chain;
 };
 
 export type RunningRelayer = {
@@ -45,17 +46,18 @@ function toAuth(auth: AuthBody) {
 }
 
 export async function startRelayer(config: RelayerConfig): Promise<RunningRelayer> {
+  const chain = config.chain ?? foundry;
   const account = privateKeyToAccount(config.privateKey);
-  const publicClient = createPublicClient({ chain: foundry, transport: http(config.rpcUrl) });
+  const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
   const walletClient = createWalletClient({
     account,
-    chain: foundry,
+    chain,
     transport: http(config.rpcUrl),
   });
   const registry = config.registry;
 
   const server = createServer((req, res) => {
-    void handle(req, res, { publicClient, walletClient, account, registry });
+    void handle(req, res, { publicClient, walletClient, account, registry, chain });
   });
 
   await new Promise<void>((resolve) => {
@@ -80,6 +82,7 @@ async function handle(
     walletClient: ReturnType<typeof createWalletClient>;
     account: Account;
     registry: Hex;
+    chain: Chain;
   },
 ): Promise<void> {
   try {
@@ -152,7 +155,7 @@ async function handle(
           toAuth(body.auth),
         ],
         account: ctx.account,
-        chain: foundry,
+        chain: ctx.chain,
       });
       await ctx.publicClient.waitForTransactionReceipt({ hash });
       return json(res, 200, { hash });
@@ -165,7 +168,7 @@ async function handle(
         functionName: "registerNode",
         args: [body.nodeKey],
         account: ctx.account,
-        chain: foundry,
+        chain: ctx.chain,
       });
       await ctx.publicClient.waitForTransactionReceipt({ hash });
       return json(res, 200, { hash });
@@ -178,7 +181,31 @@ async function handle(
         functionName: "optIn",
         args: [body.name, body.nodeKey, toAuth(body.auth)],
         account: ctx.account,
-        chain: foundry,
+        chain: ctx.chain,
+      });
+      await ctx.publicClient.waitForTransactionReceipt({ hash });
+      return json(res, 200, { hash });
+    }
+    if (req.method === "GET" && url.pathname === "/opt-out-challenge") {
+      const name = url.searchParams.get("name") ?? "";
+      const nodeKey = url.searchParams.get("nodeKey") as Hex;
+      const challenge = await ctx.publicClient.readContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "optOutChallenge",
+        args: [name, nodeKey],
+      });
+      return json(res, 200, { challenge });
+    }
+    if (req.method === "POST" && url.pathname === "/opt-out") {
+      const body = (await readJson(req)) as { name: string; nodeKey: Hex; auth: AuthBody };
+      const hash = await ctx.walletClient.writeContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "optOut",
+        args: [body.name, body.nodeKey, toAuth(body.auth)],
+        account: ctx.account,
+        chain: ctx.chain,
       });
       await ctx.publicClient.waitForTransactionReceipt({ hash });
       return json(res, 200, { hash });

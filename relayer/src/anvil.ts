@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,17 @@ export const ANVIL_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
 
 const foundryPath = `${process.env.PATH ?? ""}:/home/node/.foundry/bin`;
+
+export function ensureRegistryBuilt(): void {
+  const built = spawnSync("forge", ["build"], {
+    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..", "registry"),
+    env: { ...process.env, PATH: foundryPath },
+    encoding: "utf8",
+  });
+  if (built.status !== 0) {
+    throw new Error(built.stderr || built.stdout || "forge build failed");
+  }
+}
 
 export type AnvilStack = {
   rpcUrl: string;
