@@ -1,6 +1,7 @@
 import { concatHex, createPublicClient, createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { sepolia } from "viem/chains";
+import { registryAbi } from "./abi.ts";
 import { ensureRegistryBuilt, loadRegistryArtifact } from "./anvil.ts";
 import { loadDotenv } from "./env.ts";
 
@@ -10,8 +11,8 @@ type P256Client = {
   estimateGas: (args: { to: Hex; data: Hex }) => Promise<bigint>;
 };
 
-export const l2Chain = baseSepolia;
-export const defaultL2RpcUrl = "https://base-sepolia-rpc.publicnode.com";
+export const l2Chain = sepolia;
+export const defaultL2RpcUrl = "https://ethereum-sepolia-rpc.publicnode.com";
 const P256VERIFY = "0x0000000000000000000000000000000000000100" as const;
 /** RIP-7212 gas is 3_450; Solidity fallback is ~330k. Intrinsic + native stays well under this. */
 const NATIVE_P256_GAS_CEILING = 80_000n;
@@ -32,9 +33,9 @@ export type L2RelayerEnv = {
 
 export function readL2RelayerEnv(): L2RelayerEnv | undefined {
   loadDotenv();
-  const rpcUrl = process.env.L2_RPC_URL;
+  const rpcUrl = process.env.L2_RPC_URL ?? defaultL2RpcUrl;
   const privateKey = process.env.EVM_PRIVATE_KEY as Hex | undefined;
-  if (!rpcUrl || !privateKey) return undefined;
+  if (!privateKey) return undefined;
   if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
     throw new Error("EVM_PRIVATE_KEY must be a 32-byte hex key");
   }
@@ -45,6 +46,12 @@ export async function deployRegistryOnL2(env: L2RelayerEnv) {
   ensureRegistryBuilt();
   const account = privateKeyToAccount(env.privateKey);
   const publicClient = createPublicClient({ chain: l2Chain, transport: http(env.rpcUrl) });
+  const chainId = await publicClient.getChainId();
+  if (chainId !== l2Chain.id) {
+    throw new Error(
+      `expected Ethereum Sepolia (${l2Chain.id}), got ${chainId}; set L2_RPC_URL to an Ethereum Sepolia RPC`,
+    );
+  }
   const bal = await publicClient.getBalance({ address: account.address });
   if (bal === 0n) {
     throw new Error(
@@ -62,11 +69,22 @@ export async function deployRegistryOnL2(env: L2RelayerEnv) {
     bytecode: artifact.bytecode,
     account,
     chain: l2Chain,
-    args: [false, 5n],
+    args: [true, 5n],
     gas: 8_000_000n,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
   if (!receipt.contractAddress) throw new Error("L2 registry deploy produced no address");
+
+  const adminHash = await walletClient.writeContract({
+    address: receipt.contractAddress,
+    abi: registryAbi,
+    functionName: "setAdmin",
+    args: [account.address],
+    account,
+    chain: l2Chain,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: adminHash, timeout: 120_000 });
+
   return { registry: receipt.contractAddress, publicClient, accountAddress: account.address };
 }
 
