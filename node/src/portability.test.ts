@@ -52,8 +52,8 @@ describe("two-node portable mailbox", () => {
       privateKey: ANVIL_PRIVATE_KEY,
     });
     session = await registerViaRelayer(relayer.url, "alice");
-    await registerNodeViaRelayer(relayer.url, keyA.nodeKey);
-    await registerNodeViaRelayer(relayer.url, keyB.nodeKey);
+    await registerNodeViaRelayer(relayer.url, "node-a.test", keyA.nodeKey);
+    await registerNodeViaRelayer(relayer.url, "node-b.test", keyB.nodeKey);
     await optInViaRelayer(session, "alice", keyA.nodeKey);
     await optInViaRelayer(session, "alice", keyB.nodeKey);
 

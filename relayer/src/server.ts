@@ -157,12 +157,12 @@ async function handle(
       return json(res, 200, { hash });
     }
     if (req.method === "POST" && url.pathname === "/nodes") {
-      const body = (await readJson(req)) as { nodeKey: Hex };
+      const body = (await readJson(req)) as { domain: string; masterKey: Hex };
       const hash = await ctx.walletClient.writeContract({
         address: ctx.registry,
         abi: registryAbi,
         functionName: "registerNode",
-        args: [body.nodeKey],
+        args: [body.domain, body.masterKey],
         account: ctx.account,
         chain: ctx.chain,
       });

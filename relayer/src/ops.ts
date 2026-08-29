@@ -40,11 +40,11 @@ export async function registerViaRelayer(
   return { url, passkey, dek, kek, dekPublic, wrappedDek };
 }
 
-export async function registerNodeViaRelayer(url: string, nodeKey: Hex): Promise<void> {
+export async function registerNodeViaRelayer(url: string, domain: string, masterKey: Hex): Promise<void> {
   const res = await fetch(`${url}/nodes`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ nodeKey }),
+    body: JSON.stringify({ domain, masterKey }),
   });
   if (!res.ok) throw new Error(await res.text());
 }

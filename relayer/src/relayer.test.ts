@@ -72,7 +72,7 @@ describe("relayer signup on Anvil", () => {
     expect(storedWrapped).not.toBe(bytesToHex(dek.privateKey));
 
     const nodeKey = keccak256(toBytes("node-a"));
-    expect((await post("/nodes", { nodeKey })).status).toBe(200);
+    expect((await post("/nodes", { domain: "node-a.test", masterKey: nodeKey })).status).toBe(200);
 
     const forged = await post("/opt-in", { name: "alice", nodeKey, auth: emptyAuth() });
     expect(forged.status).toBe(400);
