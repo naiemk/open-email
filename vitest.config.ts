@@ -5,7 +5,7 @@ export default defineConfig({
     include: ["client/**/*.test.ts", "relayer/**/*.test.ts", "node/**/*.test.ts", "dal/**/*.test.ts"],
     exclude: process.env.RUN_L2_TESTS ? [] : ["relayer/src/l2.test.ts"],
     fileParallelism: false,
-    testTimeout: 60_000,
-    hookTimeout: 60_000,
+    testTimeout: process.env.RUN_L2_TESTS ? 180_000 : 60_000,
+    hookTimeout: process.env.RUN_L2_TESTS ? 180_000 : 60_000,
   },
 });

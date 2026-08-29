@@ -38,7 +38,7 @@ const rfc5322 = [
   "",
 ].join("\r\n");
 
-describe.skipIf(!env)("same seam on Base Sepolia", { timeout: 180_000, hookTimeout: 180_000 }, () => {
+describe.skipIf(!env)("same seam on Base Sepolia", { timeout: 180_000 }, () => {
   let relayer: RunningRelayer;
   let nodeA: RunningNode;
   let nodeB: RunningNode;
@@ -95,7 +95,7 @@ describe.skipIf(!env)("same seam on Base Sepolia", { timeout: 180_000, hookTimeo
       index,
       registry: registryApi,
     });
-  });
+  }, 180_000);
 
   afterAll(async () => {
     await nodeA?.close();
