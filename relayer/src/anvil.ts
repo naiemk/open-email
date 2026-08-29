@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
@@ -20,9 +20,40 @@ export const ANVIL_PRIVATE_KEY =
 
 const foundryPath = `${process.env.PATH ?? ""}:/home/node/.foundry/bin`;
 
+function registryDir(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..", "registry");
+}
+
+function registryArtifactPath(): string {
+  return path.join(registryDir(), "out/OpenEmailRegistry.sol/OpenEmailRegistry.json");
+}
+
+function newestMtimeMs(dir: string): number {
+  let newest = 0;
+  for (const name of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, name.name);
+    if (name.isDirectory()) {
+      newest = Math.max(newest, newestMtimeMs(full));
+      continue;
+    }
+    newest = Math.max(newest, statSync(full).mtimeMs);
+  }
+  return newest;
+}
+
+/** Compile the registry once. Later callers reuse `out/` unless src or foundry.toml changed. */
 export function ensureRegistryBuilt(): void {
-  const built = spawnSync("forge", ["build"], {
-    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..", "registry"),
+  const cwd = registryDir();
+  const artifact = registryArtifactPath();
+  if (existsSync(artifact)) {
+    const srcNewest = Math.max(
+      newestMtimeMs(path.join(cwd, "src")),
+      existsSync(path.join(cwd, "foundry.toml")) ? statSync(path.join(cwd, "foundry.toml")).mtimeMs : 0,
+    );
+    if (srcNewest <= statSync(artifact).mtimeMs) return;
+  }
+  const built = spawnSync("forge", ["build", "--skip", "test", "--skip", "script"], {
+    cwd,
     env: { ...process.env, PATH: foundryPath },
     encoding: "utf8",
   });
@@ -79,30 +110,35 @@ export async function startAnvilStack(): Promise<AnvilStack> {
   };
 }
 
-export async function nameRecordOf(stack: AnvilStack, name: string) {
-  return stack.publicClient.readContract({
-    address: stack.registry,
+type RegistryReadClient = {
+  publicClient: { readContract: PublicClient["readContract"] };
+  registry: Hex;
+};
+
+export async function nameRecordOf(client: RegistryReadClient, name: string) {
+  return client.publicClient.readContract({
+    address: client.registry,
     abi: registryAbi,
     functionName: "nameRecord",
     args: [name],
   });
 }
 
-export async function isOptedIn(stack: AnvilStack, name: string, nodeKey: Hex) {
-  return stack.publicClient.readContract({
-    address: stack.registry,
+export async function isOptedIn(
+  client: RegistryReadClient,
+  name: string,
+  nodeKey: Hex,
+) {
+  return client.publicClient.readContract({
+    address: client.registry,
     abi: registryAbi,
     functionName: "isOptedIn",
     args: [name, nodeKey],
   });
 }
 
-function loadRegistryArtifact(): { abi: typeof registryAbi; bytecode: Hex } {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-  const artifactPath = path.join(
-    root,
-    "registry/out/OpenEmailRegistry.sol/OpenEmailRegistry.json",
-  );
+export function loadRegistryArtifact(): { abi: typeof registryAbi; bytecode: Hex } {
+  const artifactPath = registryArtifactPath();
   const json = JSON.parse(readFileSync(artifactPath, "utf8")) as {
     bytecode: { object: Hex };
   };
