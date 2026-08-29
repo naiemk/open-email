@@ -62,8 +62,8 @@ describe.skipIf(!env)("same seam on Base Sepolia", { timeout: 180_000 }, () => {
       chain: l2Chain,
     });
     session = await registerViaRelayer(relayer.url, name);
-    await registerNodeViaRelayer(relayer.url, keyA.nodeKey);
-    await registerNodeViaRelayer(relayer.url, keyB.nodeKey);
+    await registerNodeViaRelayer(relayer.url, "node-a.test", keyA.nodeKey);
+    await registerNodeViaRelayer(relayer.url, "node-b.test", keyB.nodeKey);
     await optInViaRelayer(session, name, keyA.nodeKey);
     await optInViaRelayer(session, name, keyB.nodeKey);
 

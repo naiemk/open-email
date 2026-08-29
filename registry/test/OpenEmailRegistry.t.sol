@@ -11,8 +11,20 @@ contract OpenEmailRegistryTest is PasskeySigner {
     bytes internal constant WRAPPED_DEK = hex"aabbccdd";
 
     function setUp() public {
-        registry = new OpenEmailRegistry();
+        registry = new OpenEmailRegistry(false, 5);
         _initPasskey(1);
+    }
+
+    function test_owner_sets_registry_admin() public {
+        address admin = address(0xA11CE);
+        registry.setAdmin(admin);
+        assertEq(registry.owner(), address(this));
+        assertEq(registry.admin(), admin);
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(OpenEmailRegistry.NotOwner.selector);
+        registry.setAdmin(address(0xBEEF));
+        assertEq(registry.admin(), admin);
     }
 
     function test_register_rejects_dotted_oe_id() public {
@@ -60,10 +72,37 @@ contract OpenEmailRegistryTest is PasskeySigner {
         registry.register("alice", bytes32(qx), bytes32(qy), DEK_PUBLIC, otherWrap, auth);
     }
 
+    function test_admin_approves_node_with_domain_and_master_key() public {
+        address admin = address(0xA11CE);
+        bytes32 masterKey = keccak256("node-master");
+        registry.setAdmin(admin);
+
+        vm.prank(admin);
+        registry.registerNode("crypted.email", masterKey);
+
+        assertEq(registry.nodeOf(masterKey), "crypted.email");
+    }
+
+    function test_permissionless_registerNode_no_longer_admits() public {
+        bytes32 masterKey = keccak256("node-master");
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(OpenEmailRegistry.NotAdmin.selector);
+        registry.registerNode("evil.test", masterKey);
+    }
+
+    function test_opt_in_to_unapproved_node_fails() public {
+        _registerAlice();
+        bytes32 masterKey = keccak256("unapproved");
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.UnknownNode.selector);
+        registry.optIn("alice", masterKey, auth);
+        assertFalse(registry.isOptedIn("alice", masterKey));
+    }
+
     function test_opt_in_records_node_for_name() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        registry.registerNode(nodeKey);
+        _approveNode("node-a.test", nodeKey);
 
         bytes memory challenge = registry.optInChallenge("alice", nodeKey);
         registry.optIn("alice", nodeKey, _sign(challenge));
@@ -74,7 +113,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     function test_relayer_cannot_forge_opt_in() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        registry.registerNode(nodeKey);
+        _approveNode("node-a.test", nodeKey);
 
         WebAuthn.WebAuthnAuth memory empty;
         vm.prank(address(0xBEEF));
@@ -88,8 +127,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
         address nodeOperator = address(0xA11CE);
-        vm.prank(nodeOperator);
-        registry.registerNode(nodeKey);
+        _approveNode("node-a.test", nodeKey);
 
         WebAuthn.WebAuthnAuth memory empty;
         vm.prank(nodeOperator);
@@ -102,7 +140,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     function test_opt_out_ends_authorization_with_timestamp() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        registry.registerNode(nodeKey);
+        _approveNode("node-a.test", nodeKey);
         registry.optIn("alice", nodeKey, _sign(registry.optInChallenge("alice", nodeKey)));
         assertTrue(registry.isOptedIn("alice", nodeKey));
 
@@ -112,8 +150,49 @@ contract OpenEmailRegistryTest is PasskeySigner {
         assertGt(registry.optedOutAt("alice", nodeKey), 0);
     }
 
+    function test_testnet_register_stores_suffixed_name() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        bytes memory challenge = testnet.registerChallenge("alice.testnet", DEK_PUBLIC, WRAPPED_DEK);
+        testnet.register("alice.testnet", bytes32(qx), bytes32(qy), DEK_PUBLIC, WRAPPED_DEK, _sign(challenge));
+        (,, bytes memory storedDek,) = testnet.nameRecord("alice.testnet");
+        assertEq(storedDek, DEK_PUBLIC);
+    }
+
+    function test_testnet_register_rejects_unsuffixed_oe_id() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.MissingTestnetSuffix.selector);
+        testnet.register("alice", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_rejects_short_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.StemTooShort.selector);
+        testnet.register("al.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_rejects_dotted_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.DottedName.selector);
+        testnet.register("alice.eth.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_honors_configured_min_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 8);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.StemTooShort.selector);
+        testnet.register("alice.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
     function _registerAlice() internal {
         bytes memory challenge = registry.registerChallenge("alice", DEK_PUBLIC, WRAPPED_DEK);
         registry.register("alice", bytes32(qx), bytes32(qy), DEK_PUBLIC, WRAPPED_DEK, _sign(challenge));
+    }
+
+    function _approveNode(string memory domain, bytes32 masterKey) internal {
+        registry.setAdmin(address(this));
+        registry.registerNode(domain, masterKey);
     }
 }

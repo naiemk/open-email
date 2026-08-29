@@ -44,7 +44,7 @@ describe("headless mail through node A", () => {
       privateKey: ANVIL_PRIVATE_KEY,
     });
     session = await registerViaRelayer(relayer.url, "alice");
-    await registerNodeViaRelayer(relayer.url, server.nodeKey);
+    await registerNodeViaRelayer(relayer.url, "node-a.test", server.nodeKey);
     await optInViaRelayer(session, "alice", server.nodeKey);
 
     blobs = createBlobStore();
