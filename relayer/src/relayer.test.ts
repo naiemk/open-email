@@ -1,27 +1,23 @@
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bytesToHex, hexToBytes, keccak256, toBytes, zeroHash, type Hex } from "viem";
 import { generateDek, wrapDek } from "../../client/src/dek.ts";
 import { generatePasskey, signWebAuthn } from "../../client/src/passkey.ts";
-import { ANVIL_PRIVATE_KEY, isOptedIn, nameRecordOf, startAnvilStack, type AnvilStack } from "./anvil.ts";
+import {
+  ANVIL_PRIVATE_KEY,
+  ensureRegistryBuilt,
+  isOptedIn,
+  nameRecordOf,
+  startAnvilStack,
+  type AnvilStack,
+} from "./anvil.ts";
 import { startRelayer, type RunningRelayer } from "./server.ts";
-
-const foundryPath = `${process.env.PATH ?? ""}:/home/node/.foundry/bin`;
 
 describe("relayer signup on Anvil", () => {
   let stack: AnvilStack;
   let relayer: RunningRelayer;
 
   beforeAll(async () => {
-    const built = spawnSync("forge", ["build"], {
-      cwd: fileURLToPath(new URL("../../registry", import.meta.url)),
-      env: { ...process.env, PATH: foundryPath },
-      encoding: "utf8",
-    });
-    if (built.status !== 0) {
-      throw new Error(built.stderr || built.stdout || "forge build failed");
-    }
+    ensureRegistryBuilt();
     stack = await startAnvilStack();
     relayer = await startRelayer({
       rpcUrl: stack.rpcUrl,

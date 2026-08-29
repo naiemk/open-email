@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run && (cd registry && forge test)",
+    "build:registry": "cd registry && forge build --skip test --skip script",
+    "test": "npm run build:registry && vitest run && npm run test:forge",
+    "test:forge": "cd registry && forge test --match-path 'test/*'",
     "test:client": "vitest run client",
     "test:relayer": "vitest run relayer",
+    "test:l2": "RUN_L2_TESTS=1 vitest run relayer/src/l2.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
