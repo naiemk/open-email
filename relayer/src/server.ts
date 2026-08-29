@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry, type Chain } from "viem/chains";
+import { nameRecordOf } from "./anvil.ts";
 import { registryAbi } from "./abi.ts";
 
 export type RelayerConfig = {
@@ -112,12 +113,7 @@ async function handle(
     }
     if (req.method === "GET" && url.pathname.startsWith("/names/")) {
       const name = decodeURIComponent(url.pathname.slice("/names/".length));
-      const [qx, qy, dekPublic, wrappedDek] = await ctx.publicClient.readContract({
-        address: ctx.registry,
-        abi: registryAbi,
-        functionName: "nameRecord",
-        args: [name],
-      });
+      const [qx, qy, dekPublic, wrappedDek] = await nameRecordOf(ctx, name);
       return json(res, 200, { qx, qy, dekPublic, wrappedDek });
     }
     if (req.method === "GET" && url.pathname.startsWith("/opted-in/")) {

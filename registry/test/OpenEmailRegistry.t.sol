@@ -11,7 +11,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     bytes internal constant WRAPPED_DEK = hex"aabbccdd";
 
     function setUp() public {
-        registry = new OpenEmailRegistry();
+        registry = new OpenEmailRegistry(false, 5);
         _initPasskey(1);
     }
 
@@ -110,6 +110,42 @@ contract OpenEmailRegistryTest is PasskeySigner {
         registry.optOut("alice", nodeKey, _sign(registry.optOutChallenge("alice", nodeKey)));
         assertFalse(registry.isOptedIn("alice", nodeKey));
         assertGt(registry.optedOutAt("alice", nodeKey), 0);
+    }
+
+    function test_testnet_register_stores_suffixed_name() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        bytes memory challenge = testnet.registerChallenge("alice.testnet", DEK_PUBLIC, WRAPPED_DEK);
+        testnet.register("alice.testnet", bytes32(qx), bytes32(qy), DEK_PUBLIC, WRAPPED_DEK, _sign(challenge));
+        (,, bytes memory storedDek,) = testnet.nameRecord("alice.testnet");
+        assertEq(storedDek, DEK_PUBLIC);
+    }
+
+    function test_testnet_register_rejects_unsuffixed_oe_id() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.MissingTestnetSuffix.selector);
+        testnet.register("alice", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_rejects_short_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.StemTooShort.selector);
+        testnet.register("al.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_rejects_dotted_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 5);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.DottedName.selector);
+        testnet.register("alice.eth.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
+    }
+
+    function test_testnet_register_honors_configured_min_stem() public {
+        OpenEmailRegistry testnet = new OpenEmailRegistry(true, 8);
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.StemTooShort.selector);
+        testnet.register("alice.testnet", bytes32(0), bytes32(0), hex"", hex"", auth);
     }
 
     function _registerAlice() internal {

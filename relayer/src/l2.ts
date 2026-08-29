@@ -62,6 +62,7 @@ export async function deployRegistryOnL2(env: L2RelayerEnv) {
     bytecode: artifact.bytecode,
     account,
     chain: l2Chain,
+    args: [false, 5n],
     gas: 8_000_000n,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });

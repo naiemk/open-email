@@ -1,5 +1,12 @@
 export const registryAbi = [
   {
+    type: "constructor",
+    inputs: [
+      { name: "testnetMode_", type: "bool" },
+      { name: "minStemLength_", type: "uint256" },
+    ],
+  },
+  {
     type: "function",
     name: "registerChallenge",
     stateMutability: "view",
@@ -139,6 +146,9 @@ export const registryAbi = [
     outputs: [{ name: "", type: "uint64" }],
   },
   { type: "error", name: "DottedName", inputs: [] },
+  { type: "error", name: "MissingTestnetSuffix", inputs: [] },
+  { type: "error", name: "StemTooShort", inputs: [] },
+  { type: "error", name: "ZeroMinStem", inputs: [] },
   { type: "error", name: "EmptyName", inputs: [] },
   { type: "error", name: "NameTaken", inputs: [] },
   { type: "error", name: "InvalidPasskey", inputs: [] },

@@ -70,7 +70,12 @@ export type AnvilStack = {
   stop: () => Promise<void>;
 };
 
-export async function startAnvilStack(): Promise<AnvilStack> {
+export type AnvilRegistryMode = {
+  testnetMode?: boolean;
+  minStemLength?: bigint;
+};
+
+export async function startAnvilStack(mode: AnvilRegistryMode = {}): Promise<AnvilStack> {
   const port = await freePort();
   const rpcUrl = `http://127.0.0.1:${port}`;
   const anvil = spawn("anvil", ["--port", String(port), "--hardfork", "osaka"], {
@@ -93,6 +98,7 @@ export async function startAnvilStack(): Promise<AnvilStack> {
     bytecode: artifact.bytecode,
     account,
     chain: foundry,
+    args: [mode.testnetMode ?? false, mode.minStemLength ?? 5n],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (!receipt.contractAddress) {
@@ -115,26 +121,28 @@ type RegistryReadClient = {
   registry: Hex;
 };
 
-export async function nameRecordOf(client: RegistryReadClient, name: string) {
+export type NameRecordTuple = readonly [Hex, Hex, Hex, Hex];
+
+export async function nameRecordOf(client: RegistryReadClient, name: string): Promise<NameRecordTuple> {
   return client.publicClient.readContract({
     address: client.registry,
     abi: registryAbi,
     functionName: "nameRecord",
     args: [name],
-  });
+  }) as Promise<NameRecordTuple>;
 }
 
 export async function isOptedIn(
   client: RegistryReadClient,
   name: string,
   nodeKey: Hex,
-) {
+): Promise<boolean> {
   return client.publicClient.readContract({
     address: client.registry,
     abi: registryAbi,
     functionName: "isOptedIn",
     args: [name, nodeKey],
-  });
+  }) as Promise<boolean>;
 }
 
 export function loadRegistryArtifact(): { abi: typeof registryAbi; bytecode: Hex } {

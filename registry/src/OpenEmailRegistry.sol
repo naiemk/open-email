@@ -7,6 +7,9 @@ import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol"
 /// @notice Maps a registry name to a WebAuthn controller, DEK public key, and node opt-in.
 contract OpenEmailRegistry {
     error DottedName();
+    error MissingTestnetSuffix();
+    error StemTooShort();
+    error ZeroMinStem();
     error EmptyName();
     error NameTaken();
     error InvalidPasskey();
@@ -19,6 +22,10 @@ contract OpenEmailRegistry {
     bytes32 private constant OPT_IN_ACTION = bytes32("optIn");
     bytes32 private constant OPT_OUT_ACTION = bytes32("optOut");
     uint256 private constant X25519_PUBKEY_LENGTH = 32;
+    uint256 private constant TESTNET_SUFFIX_LENGTH = 8;
+
+    bool public immutable testnetMode;
+    uint256 public immutable minStemLength;
 
     struct NameRecord {
         bytes32 qx;
@@ -33,6 +40,12 @@ contract OpenEmailRegistry {
     mapping(bytes32 nodeKey => bool) private _nodes;
     mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedInAt)) private _optedInAt;
     mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedOutAt)) private _optedOutAt;
+
+    constructor(bool testnetMode_, uint256 minStemLength_) {
+        if (minStemLength_ == 0) revert ZeroMinStem();
+        testnetMode = testnetMode_;
+        minStemLength = minStemLength_;
+    }
 
     function registerChallenge(string calldata name, bytes calldata dekPublic, bytes calldata wrappedDek)
         public
@@ -67,8 +80,7 @@ contract OpenEmailRegistry {
         bytes calldata wrappedDek,
         WebAuthn.WebAuthnAuth calldata auth
     ) external {
-        _requireDotless(name);
-        if (bytes(name).length == 0) revert EmptyName();
+        _requireValidName(name);
         if (dekPublic.length != X25519_PUBKEY_LENGTH) revert InvalidDekPublic();
 
         bytes32 nameHash = _nameHash(name);
@@ -139,11 +151,32 @@ contract OpenEmailRegistry {
         return _optedOutAt[_nameHash(name)][nodeKey];
     }
 
-    function _requireDotless(string calldata name) internal pure {
+    function _requireValidName(string calldata name) internal view {
         bytes memory raw = bytes(name);
+        if (raw.length == 0) revert EmptyName();
+        if (testnetMode) {
+            if (!_endsWithTestnet(raw)) revert MissingTestnetSuffix();
+            uint256 stemLen = raw.length - TESTNET_SUFFIX_LENGTH;
+            if (stemLen < minStemLength) revert StemTooShort();
+            for (uint256 i = 0; i < stemLen; ++i) {
+                if (raw[i] == ".") revert DottedName();
+            }
+            return;
+        }
+        if (raw.length < minStemLength) revert StemTooShort();
         for (uint256 i = 0; i < raw.length; ++i) {
             if (raw[i] == ".") revert DottedName();
         }
+    }
+
+    function _endsWithTestnet(bytes memory raw) internal pure returns (bool) {
+        bytes memory suffix = bytes(".testnet");
+        if (raw.length < suffix.length) return false;
+        uint256 off = raw.length - suffix.length;
+        for (uint256 i = 0; i < suffix.length; ++i) {
+            if (raw[off + i] != suffix[i]) return false;
+        }
+        return true;
     }
 
     function _nameHash(string calldata name) internal pure returns (bytes32) {
