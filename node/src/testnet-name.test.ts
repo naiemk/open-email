@@ -124,6 +124,15 @@ describe("testnet names through receive", () => {
       data: rfc5322,
     });
     expect(wrongHost.rcptCode).toBe(550);
+
+    const unknown = await sendSmtp({
+      host: "127.0.0.1",
+      port: nodeA.smtpPort,
+      from: "gmail-user@example.com",
+      to: `nobody@${domain}`,
+      data: rfc5322,
+    });
+    expect(unknown.rcptCode).toBe(550);
   });
 
   it("rejects an unsuffixed OE id and a short stem on the testnet registry", async () => {
