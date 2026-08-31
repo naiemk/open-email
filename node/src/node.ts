@@ -30,6 +30,7 @@ export type RunningNode = {
 
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
   const uiJs = await bundleUi();
+  const trashByName = new Map<string, Set<number>>();
   const smtp = new SMTPServer({
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
@@ -76,7 +77,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, uiJs);
+    void handleHttp(req, res, config, uiJs, trashByName);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, "127.0.0.1", () => {
@@ -150,6 +151,7 @@ async function handleHttp(
   res: ServerResponse,
   config: NodeConfig,
   uiJs: string,
+  trashByName: Map<string, Set<number>>,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
@@ -165,16 +167,21 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      json(res, 200, config.index.list(name));
+      const trashed = trashByName.get(name) ?? new Set();
+      json(
+        res,
+        200,
+        config.index.list(name).map((row) => ({ ...row, trashed: trashed.has(row.seq) })),
+      );
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
       const name = decodeURIComponent(url.pathname.slice("/storage/".length));
-      const used = config.index.totalSize(name);
+      const total_size = config.index.totalSize(name);
       json(res, 200, {
-        used,
+        total_size,
         cap: config.index.cap,
-        warn: used >= Math.floor(config.index.cap * 0.8),
+        warn: total_size >= Math.floor(config.index.cap * 0.8),
       });
       return;
     }
@@ -183,13 +190,17 @@ async function handleHttp(
       const slash = rest.lastIndexOf("/");
       const name = decodeURIComponent(rest.slice(0, slash));
       const seq = Number(rest.slice(slash + 1));
-      config.index.trash(name, seq);
+      const set = trashByName.get(name) ?? new Set();
+      set.add(seq);
+      trashByName.set(name, set);
       json(res, 200, { ok: true });
       return;
     }
     if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
       const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
-      const cids = config.index.emptyTrash(name);
+      const seqs = [...(trashByName.get(name) ?? new Set())];
+      const cids = config.index.remove(name, seqs);
+      trashByName.delete(name);
       for (const cid of cids) config.blobs.unpin(cid);
       json(res, 200, { ok: true });
       return;

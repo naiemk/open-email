@@ -113,11 +113,11 @@ describe("headless mail through node A", () => {
     expect(rows[0]?.size).toBe(blob.byteLength);
 
     const storage = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as {
-      used: number;
+      total_size: number;
       cap: number;
       warn: boolean;
     };
-    expect(storage.used).toBe(blob.byteLength);
+    expect(storage.total_size).toBe(blob.byteLength);
     expect(storage.cap).toBe(5 * 1024 * 1024);
     expect(storage.warn).toBe(false);
     expect(new TextDecoder().decode(blob)).not.toContain("Subject: tracer mail");

@@ -100,11 +100,11 @@ describe("index quota and trash", () => {
     expect(rows[0]?.trashed).toBe(false);
 
     const afterFirst = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as {
-      used: number;
+      total_size: number;
       cap: number;
       warn: boolean;
     };
-    expect(afterFirst.used).toBe(rows[0]?.size);
+    expect(afterFirst.total_size).toBe(rows[0]?.size);
     expect(afterFirst.cap).toBe(800);
     expect(afterFirst.warn).toBe(false);
 
@@ -122,15 +122,15 @@ describe("index quota and trash", () => {
 
     const trashed = await fetch(`${nodeA.url}/trash/alice/${rows[0]!.seq}`, { method: "POST" });
     expect(trashed.status).toBe(200);
-    const stillCounted = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { used: number };
-    expect(stillCounted.used).toBe(afterFirst.used);
+    const stillCounted = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
+    expect(stillCounted.total_size).toBe(afterFirst.total_size);
     const listed = (await (await fetch(`${nodeA.url}/index/alice`)).json()) as { trashed: boolean }[];
     expect(listed[0]?.trashed).toBe(true);
 
     const emptied = await fetch(`${nodeA.url}/empty-trash/alice`, { method: "POST" });
     expect(emptied.status).toBe(200);
-    const freed = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { used: number };
-    expect(freed.used).toBe(0);
+    const freed = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
+    expect(freed.total_size).toBe(0);
     expect((await (await fetch(`${nodeA.url}/index/alice`)).json()) as unknown[]).toEqual([]);
     expect((await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).status).toBe(404);
 

@@ -9,7 +9,6 @@ export type IndexEntry = {
   size: number;
   direction: "in" | "out";
   nodeKey: Hex;
-  trashed: boolean;
 };
 
 export type IndexWrite = {
@@ -29,8 +28,7 @@ export type MailIndex = {
   append: (write: IndexWrite) => Promise<IndexEntry>;
   list: (name: string) => IndexEntry[];
   totalSize: (name: string) => number;
-  trash: (name: string, seq: number) => void;
-  emptyTrash: (name: string) => string[];
+  remove: (name: string, seqs: number[]) => string[];
 };
 
 export function indexMessage(
@@ -81,7 +79,6 @@ export function createMailIndex(opts: {
         size: write.size,
         direction: write.direction,
         nodeKey: write.nodeKey,
-        trashed: false,
       };
       entries.push(entry);
       return entry;
@@ -92,16 +89,18 @@ export function createMailIndex(opts: {
     totalSize(name) {
       return entries.filter((e) => e.name === name).reduce((sum, e) => sum + e.size, 0);
     },
-    trash(name, seq) {
-      const row = entries.find((e) => e.name === name && e.seq === seq);
-      if (row) row.trashed = true;
-    },
-    emptyTrash(name) {
-      const remaining = new Set(entries.filter((e) => !(e.name === name && e.trashed)).map((e) => e.cid));
-      const dropped = entries.filter((e) => e.name === name && e.trashed && !remaining.has(e.cid));
-      const cids = [...new Set(dropped.map((e) => e.cid))];
+    remove(name, seqs) {
+      const drop = new Set(seqs);
+      const remaining = new Set(
+        entries.filter((e) => !(e.name === name && drop.has(e.seq))).map((e) => e.cid),
+      );
+      const cids = [
+        ...new Set(
+          entries.filter((e) => e.name === name && drop.has(e.seq) && !remaining.has(e.cid)).map((e) => e.cid),
+        ),
+      ];
       for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i]!.name === name && entries[i]!.trashed) entries.splice(i, 1);
+        if (entries[i]!.name === name && drop.has(entries[i]!.seq)) entries.splice(i, 1);
       }
       return cids;
     },
