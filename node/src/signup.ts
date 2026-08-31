@@ -21,6 +21,7 @@ export type SignupConfig = {
   turnstile: { verify: (token: string) => Promise<boolean> };
   invoices: InvoiceBook;
   fakeCheckout?: boolean;
+  turnstileSiteKey?: string;
 };
 
 type AuthBody = {

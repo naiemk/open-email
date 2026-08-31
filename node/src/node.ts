@@ -262,6 +262,7 @@ async function handleHttp(
         domain: config.domain,
         nodeKey: config.nodeKey,
         fakeCheckout: Boolean(config.signup?.fakeCheckout),
+        turnstileSiteKey: config.signup?.turnstileSiteKey ?? "",
       });
       return;
     }
@@ -468,28 +469,32 @@ function uiHtml(domain: string): string {
     .composer { position: absolute; right: 24px; bottom: 24px; width: 420px; background: #fff; border-radius: 12px; box-shadow: 0 12px 40px #0003; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
     .sheet { padding: 32px; max-width: 520px; }
     .err { color: #b91c1c; }
+    .hint { font-size: 13px; opacity: 0.7; }
+    .id-row { display: flex; align-items: center; gap: 8px; }
+    .id-row input { flex: 1; }
+    .suffix { color: #6d4aff; font-weight: 600; white-space: nowrap; }
     label { display: block; font-size: 12px; opacity: 0.7; margin-top: 8px; }
     input[type=text], textarea { width: 100%; padding: 8px; }
     textarea { min-height: 120px; }
-    iframe { width: 100%; height: 280px; border: 1px solid #ddd; border-radius: 8px; }
     .secret { background: #111; color: #fc0; padding: 12px; overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
   <div id="app">
-    <div class="split">
-      <nav>
-        <h1>${domain}</h1>
-        <button type="button" class="compose">Compose</button>
-        <button type="button" class="folder on">Inbox</button>
-        <button type="button" class="folder">Sent</button>
-        <button type="button" class="folder">Trash</button>
-        <button type="button">Settings</button>
-      </nav>
-      <div class="list"></div>
-      <div class="read"></div>
+    <div class="sheet">
+      <h1>${domain}</h1>
+      <p>Create a passkey, pick an OE id, pay, save the recovery secret once, then this node opts you in.</p>
+      <label for="oe-id">OE id</label>
+      <div class="id-row">
+        <input id="oe-id" type="text" data-act="oeId" value="" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="alice">
+        <span class="suffix">@${domain}</span>
+      </div>
+      <p class="hint" data-mailbox-preview>you@${domain}</p>
+      <p><button type="button" data-act="create-passkey">Create passkey</button>
+         <button type="button" data-act="unlock">Unlock existing</button></p>
     </div>
   </div>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script type="module" src="/ui.js"></script>
 </body>
 </html>`;
