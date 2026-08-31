@@ -100,13 +100,26 @@ describe("headless mail through node A", () => {
       seq: number;
       name: string;
       cid: string;
+      size: number;
+      direction: string;
     }[];
     expect(rows).toHaveLength(1);
     expect(rows[0]?.seq).toBe(1);
     expect(rows[0]?.name).toBe("alice");
+    expect(rows[0]?.direction).toBe("in");
 
     const blobRes = await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`);
     const blob = new Uint8Array(await blobRes.arrayBuffer());
+    expect(rows[0]?.size).toBe(blob.byteLength);
+
+    const storage = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as {
+      used: number;
+      cap: number;
+      warn: boolean;
+    };
+    expect(storage.used).toBe(blob.byteLength);
+    expect(storage.cap).toBe(5 * 1024 * 1024);
+    expect(storage.warn).toBe(false);
     expect(new TextDecoder().decode(blob)).not.toContain("Subject: tracer mail");
     expect(new TextDecoder().decode(blob)).not.toContain("hello from the rest of the internet");
 

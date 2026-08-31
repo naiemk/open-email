@@ -37,7 +37,11 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
       const local = localPart(address.address);
       void config.registry.isOptedIn(local, config.nodeKey).then((ok) => {
         if (!ok) {
-          callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+          callback(smtpError("No such user here", 550));
+          return;
+        }
+        if (config.index.totalSize(local) >= config.index.cap) {
+          callback(smtpError("Insufficient storage", 452));
           return;
         }
         callback();
@@ -101,15 +105,26 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
 async function ingest(config: NodeConfig, name: string, rfc5322: Uint8Array): Promise<void> {
   const record = await config.registry.nameRecord(name);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
+  const size = blob.byteLength;
+  if (config.index.totalSize(name) + size > config.index.cap) {
+    throw smtpError("Insufficient storage", 452);
+  }
   const cid = await config.blobs.pin(blob);
   const time = Math.floor(Date.now() / 1000);
+  const direction = "in" as const;
   await config.index.append({
     name,
     time,
     cid,
+    size,
+    direction,
     nodeKey: config.nodeKey,
-    signature: signIndexWrite(config.nodeSecret, name, time, cid),
+    signature: signIndexWrite(config.nodeSecret, name, time, cid, size, direction),
   });
+}
+
+function smtpError(message: string, responseCode: number): Error {
+  return Object.assign(new Error(message), { responseCode });
 }
 
 function localPart(address: string): string {
@@ -151,6 +166,32 @@ async function handleHttp(
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
       json(res, 200, config.index.list(name));
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
+      const name = decodeURIComponent(url.pathname.slice("/storage/".length));
+      const used = config.index.totalSize(name);
+      json(res, 200, {
+        used,
+        cap: config.index.cap,
+        warn: used >= Math.floor(config.index.cap * 0.8),
+      });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/trash/")) {
+      const rest = url.pathname.slice("/trash/".length);
+      const slash = rest.lastIndexOf("/");
+      const name = decodeURIComponent(rest.slice(0, slash));
+      const seq = Number(rest.slice(slash + 1));
+      config.index.trash(name, seq);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
+      const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
+      const cids = config.index.emptyTrash(name);
+      for (const cid of cids) config.blobs.unpin(cid);
+      json(res, 200, { ok: true });
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {

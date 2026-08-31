@@ -5,6 +5,7 @@ import * as raw from "multiformats/codecs/raw";
 export type BlobStore = {
   pin: (bytes: Uint8Array) => Promise<string>;
   get: (cid: string) => Promise<Uint8Array | undefined>;
+  unpin: (cid: string) => void;
 };
 
 /** Tracer CAS: CIDv1 raw + sha2-256, pin-on-add (Kubo-shaped, in-process). */
@@ -20,6 +21,9 @@ export function createBlobStore(): BlobStore {
     async get(cid) {
       const bytes = pins.get(cid);
       return bytes ? new Uint8Array(bytes) : undefined;
+    },
+    unpin(cid) {
+      pins.delete(cid);
     },
   };
 }

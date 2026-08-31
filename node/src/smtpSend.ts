@@ -22,7 +22,7 @@ export async function sendSmtp(opts: {
   await expectCode(socket, `EHLO tracer.local`, 250);
   await expectCode(socket, `MAIL FROM:<${opts.from}>`, 250);
   const rcpt = await command(socket, `RCPT TO:<${opts.to}>`);
-  if (rcpt.code >= 500) {
+  if (rcpt.code >= 400) {
     await command(socket, "QUIT").catch(() => undefined);
     socket.end();
     return { rcptCode: rcpt.code, rcptLine: rcpt.line, dataCode: 0 };
