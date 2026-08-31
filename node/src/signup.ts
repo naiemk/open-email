@@ -81,6 +81,7 @@ export async function handleSignup(
   res: ServerResponse,
   signup: SignupConfig,
   nodeKey: Hex,
+  takeOptSlot?: (name: string) => boolean,
 ): Promise<boolean> {
   if (!url.pathname.startsWith("/signup/")) return false;
 
@@ -199,6 +200,10 @@ export async function handleSignup(
       return true;
     }
     const registryName = `${invoice.oeId}.testnet`;
+    if (takeOptSlot && !takeOptSlot(registryName)) {
+      json(res, 429, { error: "rate" });
+      return true;
+    }
     const opted = await fetch(`${signup.relayerUrl}/opt-in`, {
       method: "POST",
       headers: { "content-type": "application/json" },
