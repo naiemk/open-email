@@ -19,12 +19,12 @@ import {
 import { startRelayer, type RunningRelayer } from "./server.ts";
 
 const env = process.env.RUN_L2_TESTS ? readL2RelayerEnv() : undefined;
-const domain = "crypted.email";
+const domain = "testnet.crypted.email";
 const stem = `oe${Date.now().toString(36)}`;
 const name = `${stem}.testnet`;
 const rfc5322 = [
   "From: gmail-user@example.com",
-  `To: ${name}@${domain}`,
+  `To: ${stem}@${domain}`,
   "Subject: sepolia first receive",
   "",
   "hello on ethereum sepolia",
@@ -90,7 +90,7 @@ describe.skipIf(!env)("Sepolia first-receive seam", { timeout: 180_000 }, () => 
       host: "127.0.0.1",
       port: nodeA.smtpPort,
       from: "gmail-user@example.com",
-      to: `${name}@${domain}`,
+      to: `${stem}@${domain}`,
       data: rfc5322,
     });
     expect(sent.rcptCode).toBe(250);

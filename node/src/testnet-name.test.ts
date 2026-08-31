@@ -21,9 +21,11 @@ import { startNode, type RunningNode } from "./node.ts";
 import { sendSmtp } from "./smtpSend.ts";
 
 const name = "alice.testnet";
+const oeId = "alice";
+const domain = "testnet.crypted.email";
 const rfc5322 = [
   "From: gmail-user@example.com",
-  "To: alice.testnet@crypted.email",
+  `To: ${oeId}@${domain}`,
   "Subject: testnet receive",
   "",
   "hello on a testnet name",
@@ -46,7 +48,7 @@ describe("testnet names through receive", () => {
       privateKey: ANVIL_PRIVATE_KEY,
     });
     session = await registerViaRelayer(relayer.url, name);
-    await registerNodeViaRelayer(relayer.url, "crypted.email", server.nodeKey);
+    await registerNodeViaRelayer(relayer.url, domain, server.nodeKey);
     await optInViaRelayer(session, name, server.nodeKey);
 
     const blobs = createBlobStore();
@@ -54,7 +56,7 @@ describe("testnet names through receive", () => {
       isOptedIn: (n, nodeKey) => isOptedIn(stack, n, nodeKey),
     });
     nodeA = await startNode({
-      domain: "crypted.email",
+      domain,
       nodeKey: server.nodeKey,
       nodeSecret: server.secretKey,
       blobs,
@@ -75,12 +77,12 @@ describe("testnet names through receive", () => {
     await stack?.stop();
   });
 
-  it("registers alice.testnet, accepts SMTP, and decrypts on the node UI origin", async () => {
+  it("registers alice.testnet, accepts SMTP at alice@testnet.crypted.email, and decrypts on the node UI origin", async () => {
     const sent = await sendSmtp({
       host: "127.0.0.1",
       port: nodeA.smtpPort,
       from: "gmail-user@example.com",
-      to: `${name}@crypted.email`,
+      to: `${oeId}@${domain}`,
       data: rfc5322,
     });
     expect(sent.rcptCode).toBe(250);
@@ -101,7 +103,27 @@ describe("testnet names through receive", () => {
     expect(plaintext).toContain("hello on a testnet name");
 
     const home = await (await fetch(nodeA.url)).text();
-    expect(home).toContain("crypted.email");
+    expect(home).toContain(domain);
+  });
+
+  it("rejects the registry name as a local-part and a recipient on another domain", async () => {
+    const dottedLocal = await sendSmtp({
+      host: "127.0.0.1",
+      port: nodeA.smtpPort,
+      from: "gmail-user@example.com",
+      to: `${name}@${domain}`,
+      data: rfc5322,
+    });
+    expect(dottedLocal.rcptCode).toBe(550);
+
+    const wrongHost = await sendSmtp({
+      host: "127.0.0.1",
+      port: nodeA.smtpPort,
+      from: "gmail-user@example.com",
+      to: `${oeId}@crypted.email`,
+      data: rfc5322,
+    });
+    expect(wrongHost.rcptCode).toBe(550);
   });
 
   it("rejects an unsuffixed OE id and a short stem on the testnet registry", async () => {
