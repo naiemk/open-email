@@ -6,6 +6,7 @@ import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
+import { handleSignup, type SignupConfig } from "./signup.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -19,6 +20,7 @@ export type NodeConfig = {
   index: MailIndex;
   smtpPort?: number;
   httpPort?: number;
+  signup?: SignupConfig;
 };
 
 export type RunningNode = {
@@ -35,13 +37,17 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
     onRcptTo(address, _session, callback) {
-      const local = localPart(address.address);
-      void config.registry.isOptedIn(local, config.nodeKey).then((ok) => {
+      const name = mailboxName(config, address.address);
+      if (!name) {
+        callback(smtpError("No such user here", 550));
+        return;
+      }
+      void config.registry.isOptedIn(name, config.nodeKey).then((ok) => {
         if (!ok) {
           callback(smtpError("No such user here", 550));
           return;
         }
-        if (config.index.totalSize(local) >= config.index.cap) {
+        if (config.index.totalSize(name) >= config.index.cap) {
           callback(smtpError("Insufficient storage", 452));
           return;
         }
@@ -58,7 +64,12 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
           callback(new Error("no recipient"));
           return;
         }
-        void ingest(config, localPart(rcpt), rfc5322)
+        const name = mailboxName(config, rcpt);
+        if (!name) {
+          callback(smtpError("No such user here", 550));
+          return;
+        }
+        void ingest(config, name, rfc5322)
           .then(() => callback())
           .catch((err: unknown) => callback(err instanceof Error ? err : new Error(String(err))));
       });
@@ -128,8 +139,17 @@ function smtpError(message: string, responseCode: number): Error {
   return Object.assign(new Error(message), { responseCode });
 }
 
-function localPart(address: string): string {
-  return address.split("@")[0] ?? address;
+/** SMTP `{oe-id}@testnet.crypted.email` maps to registry name `{oe-id}.testnet`. */
+function mailboxName(config: NodeConfig, address: string): string | undefined {
+  const at = address.lastIndexOf("@");
+  const local = (at === -1 ? address : address.slice(0, at)).toLowerCase();
+  const host = (at === -1 ? "" : address.slice(at + 1)).toLowerCase();
+  if (host !== config.domain.toLowerCase()) return undefined;
+  if (config.domain.toLowerCase() === "testnet.crypted.email") {
+    if (local.includes(".")) return undefined;
+    return `${local}.testnet`;
+  }
+  return local;
 }
 
 async function bundleUi(): Promise<string> {
@@ -155,6 +175,7 @@ async function handleHttp(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
+    if (config.signup && (await handleSignup(req, url, res, config.signup, config.nodeKey))) return;
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(uiHtml(config.domain));
