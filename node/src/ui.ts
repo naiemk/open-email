@@ -25,6 +25,9 @@ type State = {
   screen: "signup" | "mail" | "settings";
   folder: Folder;
   composing: boolean;
+  composeTo: string;
+  composeSubject: string;
+  composeBody: string;
   query: string;
   selected: number | null;
   mails: Mail[];
@@ -52,6 +55,9 @@ const state: State = {
   screen: "signup",
   folder: "inbox",
   composing: false,
+  composeTo: "",
+  composeSubject: "",
+  composeBody: "",
   query: "",
   selected: null,
   mails: [],
@@ -96,7 +102,9 @@ async function boot(): Promise<void> {
 function onInput(e: Event): void {
   const t = e.target as HTMLElement;
   if (!(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement)) return;
-  if (t.dataset.act === "oeId") state.signup.oeId = t.value.trim();
+  if (t.dataset.act === "compose-to") state.composeTo = t.value;
+  if (t.dataset.act === "compose-subject") state.composeSubject = t.value;
+  if (t.dataset.act === "compose-body") state.composeBody = t.value;
   if (t.dataset.act === "query") {
     state.query = t.value;
     if (e.type === "change") render();
@@ -117,6 +125,7 @@ function onClick(e: Event): void {
       if (act === "select") state.selected = Number(el.dataset.seq);
       if (act === "compose") state.composing = true;
       if (act === "close-compose") state.composing = false;
+      if (act === "send") await sendMail();
       if (act === "settings") {
         state.screen = "settings";
         state.composing = false;
@@ -304,6 +313,31 @@ async function moveTrash(): Promise<void> {
   await loadMailbox();
 }
 
+async function sendMail(): Promise<void> {
+  if (!state.name) throw new Error("Unlock first");
+  const res = await fetch("/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: state.name,
+      to: state.composeTo.trim(),
+      subject: state.composeSubject,
+      body: state.composeBody,
+      turnstile: "ok",
+    }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(err.error ?? `send ${res.status}`);
+  }
+  state.composing = false;
+  state.composeTo = "";
+  state.composeSubject = "";
+  state.composeBody = "";
+  state.folder = "sent";
+  await loadMailbox();
+}
+
 async function emptyTrash(): Promise<void> {
   await fetch(`/empty-trash/${state.name}`, { method: "POST" });
   await loadMailbox();
@@ -392,11 +426,11 @@ function render(): void {
         state.composing
           ? `<div class="composer">
         <div><b>New message</b> · from ${esc(smtpFrom())}</div>
-        <label>To</label><input type="text">
-        <label>Subject</label><input type="text">
-        <textarea placeholder="Write…"></textarea>
+        <label>To</label><input type="text" data-act="compose-to" value="${esc(state.composeTo)}">
+        <label>Subject</label><input type="text" data-act="compose-subject" value="${esc(state.composeSubject)}">
+        <textarea placeholder="Write…" data-act="compose-body">${esc(state.composeBody)}</textarea>
         <div>
-          <button type="button" disabled>Send</button>
+          <button type="button" data-act="send">Send</button>
           <button type="button" data-act="close-compose">Discard</button>
         </div>
       </div>`

@@ -7,6 +7,9 @@ import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
 import { handleSignup, type SignupConfig } from "./signup.ts";
+import { createHitWindow } from "./rateLimit.ts";
+import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
+import { signDkim } from "./dkim.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -21,6 +24,7 @@ export type NodeConfig = {
   smtpPort?: number;
   httpPort?: number;
   signup?: SignupConfig;
+  send?: SendConfig;
 };
 
 export type RunningNode = {
@@ -33,26 +37,45 @@ export type RunningNode = {
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
   const uiJs = await bundleUi();
   const trashByName = new Map<string, Set<number>>();
+  const sendHits = createHitWindow();
+  const optHits = createHitWindow();
+  const now = () => config.send?.now?.() ?? Date.now();
+  const takeSendSlot = (name: string) => sendHits.take(name, now(), 20, 100);
+  const takeOptSlot = (name: string) => optHits.take(name, now(), 2, 6);
   const smtp = new SMTPServer({
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
-    onRcptTo(address, _session, callback) {
-      const name = mailboxName(config, address.address);
-      if (!name) {
-        callback(smtpError("No such user here", 550));
+    onRcptTo(address, session, callback) {
+      const rcptName = mailboxName(config, address.address);
+      if (rcptName) {
+        void config.registry.isOptedIn(rcptName, config.nodeKey).then((ok) => {
+          if (!ok) {
+            callback(smtpError("No such user here", 550));
+            return;
+          }
+          if (config.index.totalSize(rcptName) >= config.index.cap) {
+            callback(smtpError("Insufficient storage", 452));
+            return;
+          }
+          callback();
+        });
         return;
       }
-      void config.registry.isOptedIn(name, config.nodeKey).then((ok) => {
-        if (!ok) {
-          callback(smtpError("No such user here", 550));
-          return;
-        }
-        if (config.index.totalSize(name) >= config.index.cap) {
-          callback(smtpError("Insufficient storage", 452));
-          return;
-        }
-        callback();
-      });
+      const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
+        ? session.envelope.mailFrom.address
+        : "";
+      const fromName = mailboxName(config, mailFrom);
+      if (fromName && config.send) {
+        void config.registry.isOptedIn(fromName, config.nodeKey).then((ok) => {
+          if (!ok) {
+            callback(smtpError("No such user here", 550));
+            return;
+          }
+          callback();
+        });
+        return;
+      }
+      callback(smtpError("No such user here", 550));
     },
     onData(stream, session, callback) {
       const chunks: Buffer[] = [];
@@ -64,13 +87,36 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
           callback(new Error("no recipient"));
           return;
         }
-        const name = mailboxName(config, rcpt);
-        if (!name) {
+        const rcptName = mailboxName(config, rcpt);
+        if (rcptName) {
+          void ingest(config, rcptName, rfc5322, "in")
+            .then(() => callback())
+            .catch((err: unknown) => callback(err instanceof Error ? err : new Error(String(err))));
+          return;
+        }
+        const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
+          ? session.envelope.mailFrom.address
+          : "";
+        const fromName = mailboxName(config, mailFrom);
+        if (!fromName || !config.send) {
           callback(smtpError("No such user here", 550));
           return;
         }
-        void ingest(config, name, rfc5322)
-          .then(() => callback())
+        const from = smtpFromAddress(config.domain, fromName);
+        const signed = signDkim(rewriteFrom(new TextDecoder().decode(rfc5322), from), config.send.dkim);
+        if (!takeSendSlot(fromName)) {
+          callback(smtpError("Rate limited", 452));
+          return;
+        }
+        void ingest(config, fromName, new TextEncoder().encode(signed), "out")
+          .then(() => config.send!.deliver({ mailFrom: from, rcptTo: rcpt, data: signed }))
+          .then((code) => {
+            if (code >= 400) {
+              callback(smtpError("Delivery failed", 451));
+              return;
+            }
+            callback();
+          })
           .catch((err: unknown) => callback(err instanceof Error ? err : new Error(String(err))));
       });
     },
@@ -88,7 +134,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, uiJs, trashByName);
+    void handleHttp(req, res, config, uiJs, trashByName, takeSendSlot, takeOptSlot);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, "127.0.0.1", () => {
@@ -114,7 +160,12 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   };
 }
 
-async function ingest(config: NodeConfig, name: string, rfc5322: Uint8Array): Promise<void> {
+async function ingest(
+  config: NodeConfig,
+  name: string,
+  rfc5322: Uint8Array,
+  direction: "in" | "out",
+): Promise<void> {
   const record = await config.registry.nameRecord(name);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
   const size = blob.byteLength;
@@ -123,7 +174,6 @@ async function ingest(config: NodeConfig, name: string, rfc5322: Uint8Array): Pr
   }
   const cid = await config.blobs.pin(blob);
   const time = Math.floor(Date.now() / 1000);
-  const direction = "in" as const;
   await config.index.append({
     name,
     time,
@@ -172,10 +222,30 @@ async function handleHttp(
   config: NodeConfig,
   uiJs: string,
   trashByName: Map<string, Set<number>>,
+  takeSendSlot: (name: string) => boolean,
+  takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
-    if (config.signup && (await handleSignup(req, url, res, config.signup, config.nodeKey))) return;
+    if (
+      config.signup &&
+      (await handleSignup(req, url, res, config.signup, config.nodeKey, takeOptSlot))
+    ) {
+      return;
+    }
+    if (
+      config.send &&
+      (await handleSend(req, url, res, {
+        domain: config.domain,
+        nodeKey: config.nodeKey,
+        send: config.send,
+        isOptedIn: (name, nodeKey) => config.registry.isOptedIn(name, nodeKey),
+        takeSendSlot,
+        ingest: (name, rfc5322, direction) => ingest(config, name, rfc5322, direction),
+      }))
+    ) {
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(uiHtml(config.domain));
@@ -195,7 +265,7 @@ async function handleHttp(
       return;
     }
     if (config.signup && url.pathname.startsWith("/api/")) {
-      await proxyRelayer(req, url, res, config.signup.relayerUrl);
+      await proxyRelayer(req, url, res, config.signup.relayerUrl, takeOptSlot);
       return;
     }
     if (req.method === "GET" && url.pathname === "/pay") {
@@ -291,6 +361,7 @@ async function proxyRelayer(
   url: URL,
   res: ServerResponse,
   relayerUrl: string,
+  takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
   const path = url.pathname.slice("/api".length);
   const allowed =
@@ -309,6 +380,10 @@ async function proxyRelayer(
   const init: RequestInit = { method: req.method, headers };
   if (req.method !== "GET" && req.method !== "HEAD") {
     const body = await readBody(req);
+    if ((path === "/opt-in" || path === "/opt-out") && !takeOptSlot(nameFromJson(body))) {
+      json(res, 429, { error: "rate" });
+      return;
+    }
     init.body = new Uint8Array(body);
   }
   const proxied = await fetch(`${relayerUrl}${path}${url.search}`, init);
@@ -317,6 +392,21 @@ async function proxyRelayer(
     "content-type": proxied.headers.get("content-type") ?? "application/json",
   });
   res.end(buf);
+}
+
+function nameFromJson(body: Buffer): string {
+  try {
+    const parsed = JSON.parse(body.toString("utf8") || "{}") as { name?: string };
+    return parsed.name ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rewriteFrom(rfc5322: string, from: string): string {
+  const msg = rfc5322.includes("\r\n") ? rfc5322 : rfc5322.replace(/\n/g, "\r\n");
+  if (/^From:/im.test(msg)) return msg.replace(/^From:.*$/im, `From: ${from}`);
+  return `From: ${from}\r\n${msg}`;
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
