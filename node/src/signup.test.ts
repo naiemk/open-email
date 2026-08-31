@@ -59,6 +59,7 @@ describe("paid signup through the node", () => {
         relayerUrl: relayer.url,
         turnstile: { verify: async (token) => token === "ok" },
         invoices,
+        fakeCheckout: true,
       },
     });
   });
@@ -229,6 +230,31 @@ describe("paid signup through the node", () => {
     expect(fresh.status).toBe(200);
     const c = (await fresh.json()) as { id: string };
     expect(c.id).not.toBe(a.id);
+  });
+
+  it("hosts fake checkout and same-origin relayer challenges, not /nodes", async () => {
+    const created = await fetch(`${nodeA.url}/signup/invoice`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credentialId: "cred-pay", oeId: "payer", turnstile: "ok" }),
+    });
+    const invoice = (await created.json()) as { id: string; payLink: string };
+    const payPage = await fetch(`${nodeA.url}${invoice.payLink}`);
+    expect(payPage.status).toBe(200);
+    expect(await payPage.text()).toContain("Mark paid");
+    expect((await fetch(`${nodeA.url}/signup/invoice/${invoice.id}/pay`, { method: "POST" })).status).toBe(200);
+    const polled = (await (await fetch(`${nodeA.url}/signup/invoice/${invoice.id}`)).json()) as { status: string };
+    expect(polled.status).toBe("paid");
+
+    const dek = generateDek();
+    const wrapped = bytesToHex(wrapDek(dek.privateKey, new Uint8Array(32).fill(4)));
+    const pub = bytesToHex(dek.publicKey);
+    const challenge = await fetch(
+      `${nodeA.url}/api/register-challenge?name=payer.testnet&dekPublic=${pub}&wrappedDek=${wrapped}`,
+    );
+    expect(challenge.status).toBe(200);
+    expect(((await challenge.json()) as { challenge: string }).challenge).toMatch(/^0x/);
+    expect((await fetch(`${nodeA.url}/api/nodes`)).status).toBe(404);
   });
 
   async function registerOnNode(

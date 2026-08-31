@@ -132,7 +132,7 @@ describe("index quota and trash", () => {
     const freed = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
     expect(freed.total_size).toBe(0);
     expect((await (await fetch(`${nodeA.url}/index/alice`)).json()) as unknown[]).toEqual([]);
-    expect((await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).status).toBe(404);
+    expect((await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}?name=alice`)).status).toBe(404);
 
     const again = await sendSmtp({
       host: "127.0.0.1",

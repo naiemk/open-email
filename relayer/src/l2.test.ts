@@ -104,7 +104,7 @@ describe.skipIf(!env)("Sepolia first-receive seam", { timeout: 180_000 }, () => 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toBe(name);
 
-    const blob = new Uint8Array(await (await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).arrayBuffer());
+    const blob = new Uint8Array(await (await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}?name=${name}`)).arrayBuffer());
     const dekPrivate = unwrapDek(hexToBytes(session.wrappedDek), session.kek);
     const plaintext = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
     expect(plaintext).toContain("Subject: sepolia first receive");

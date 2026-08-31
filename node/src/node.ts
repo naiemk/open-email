@@ -186,14 +186,42 @@ async function handleHttp(
       res.end(uiJs);
       return;
     }
+    if (req.method === "GET" && url.pathname === "/meta") {
+      json(res, 200, {
+        domain: config.domain,
+        nodeKey: config.nodeKey,
+        fakeCheckout: Boolean(config.signup?.fakeCheckout),
+      });
+      return;
+    }
+    if (config.signup && url.pathname.startsWith("/api/")) {
+      await proxyRelayer(req, url, res, config.signup.relayerUrl);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/pay") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!config.signup?.fakeCheckout || !config.signup.invoices.get(id)) {
+        json(res, 404, { error: "not found" });
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(payHtml(id));
+      return;
+    }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
       const trashed = trashByName.get(name) ?? new Set();
-      json(
-        res,
-        200,
-        config.index.list(name).map((row) => ({ ...row, trashed: trashed.has(row.seq) })),
+      const newestFirst = [...config.index.list(name)]
+        .reverse()
+        .map((row) => ({ ...row, trashed: trashed.has(row.seq) }));
+      const before = Number(url.searchParams.get("before") ?? "");
+      const limitRaw = Number(url.searchParams.get("limit") ?? 100);
+      const limit = Math.min(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 100, 100);
+      const page = (Number.isFinite(before) && before > 0 ? newestFirst.filter((r) => r.seq < before) : newestFirst).slice(
+        0,
+        limit,
       );
+      json(res, 200, page);
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
@@ -228,6 +256,11 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {
       const cid = decodeURIComponent(url.pathname.slice("/blobs/".length));
+      const name = url.searchParams.get("name") ?? "";
+      if (!name || !config.index.list(name).some((row) => row.cid === cid)) {
+        json(res, 404, { error: "unknown cid" });
+        return;
+      }
       const bytes = await config.blobs.get(cid);
       if (!bytes) {
         json(res, 404, { error: "unknown cid" });
@@ -253,18 +286,119 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+async function proxyRelayer(
+  req: IncomingMessage,
+  url: URL,
+  res: ServerResponse,
+  relayerUrl: string,
+): Promise<void> {
+  const path = url.pathname.slice("/api".length);
+  const allowed =
+    path === "/register-challenge" ||
+    path === "/opt-in-challenge" ||
+    path === "/opt-out-challenge" ||
+    path === "/opt-in" ||
+    path === "/opt-out" ||
+    path.startsWith("/opted-in/");
+  if (!allowed) {
+    json(res, 404, { error: "not found" });
+    return;
+  }
+  const headers: Record<string, string> = {};
+  if (req.headers["content-type"]) headers["content-type"] = String(req.headers["content-type"]);
+  const init: RequestInit = { method: req.method, headers };
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const body = await readBody(req);
+    init.body = new Uint8Array(body);
+  }
+  const proxied = await fetch(`${relayerUrl}${path}${url.search}`, init);
+  const buf = Buffer.from(await proxied.arrayBuffer());
+  res.writeHead(proxied.status, {
+    "content-type": proxied.headers.get("content-type") ?? "application/json",
+  });
+  res.end(buf);
+}
+
+function readBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function payHtml(id: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pay</title></head>
+<body>
+  <p>Testnet checkout for invoice ${id}.</p>
+  <button type="button" id="pay">Mark paid</button>
+  <script>
+    document.getElementById("pay").onclick = async () => {
+      await fetch("/signup/invoice/${id}/pay", { method: "POST" });
+      document.body.textContent = "paid";
+    };
+  </script>
+</body>
+</html>`;
+}
+
 function uiHtml(domain: string): string {
   return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>${domain}</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${domain}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #1c1230; background: #f4f1fb; }
+    button, input, textarea { font: inherit; }
+    #app { min-height: 100vh; }
+    .split { display: grid; grid-template-columns: 200px 280px 1fr; height: 100vh; position: relative; }
+    nav { background: #2b1a4e; color: #eee; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+    nav h1 { font-size: 16px; margin: 0 0 8px; color: #c4b5fd; }
+    nav button, .folder { text-align: left; background: transparent; color: inherit; border: 0; padding: 8px; border-radius: 8px; cursor: pointer; }
+    .folder.on, nav button.on { background: #6d4aff; }
+    .compose { background: #6d4aff; color: #fff; border: 0; padding: 10px; border-radius: 10px; cursor: pointer; }
+    .meter { margin-top: auto; font-size: 12px; color: #c4b5fd; }
+    .meter i { display: block; height: 6px; background: #6d4aff; border-radius: 4px; margin-top: 4px; max-width: 100%; }
+    .meter.warn i { background: #eab308; }
+    .list { border-right: 1px solid #ddd; overflow: auto; background: #fff; }
+    .search { padding: 8px; }
+    .search input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+    .row { padding: 10px 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .row.on { background: #efe8ff; }
+    .row b { display: block; }
+    .row span { color: #666; font-size: 12px; }
+    .read { padding: 20px 28px; overflow: auto; background: #fff; }
+    .composer { position: absolute; right: 24px; bottom: 24px; width: 420px; background: #fff; border-radius: 12px; box-shadow: 0 12px 40px #0003; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .sheet { padding: 32px; max-width: 520px; }
+    .err { color: #b91c1c; }
+    label { display: block; font-size: 12px; opacity: 0.7; margin-top: 8px; }
+    input[type=text], textarea { width: 100%; padding: 8px; }
+    textarea { min-height: 120px; }
+    iframe { width: 100%; height: 280px; border: 1px solid #ddd; border-radius: 8px; }
+    .secret { background: #111; color: #fc0; padding: 12px; overflow-wrap: anywhere; }
+  </style>
+</head>
 <body>
-  <h1>${domain}</h1>
-  <p>This UI talks only to this node. Unlock with your device KEK (WebAuthn PRF).</p>
-  <label>OE id <input id="name" value="alice"></label>
-  <label>KEK hex <input id="kek" size="64"></label>
-  <button type="button" id="unlock">Unlock</button>
-  <ul id="list"></ul>
-  <pre id="body"></pre>
+  <div id="app">
+    <div class="split">
+      <nav>
+        <h1>${domain}</h1>
+        <button type="button" class="compose">Compose</button>
+        <button type="button" class="folder on">Inbox</button>
+        <button type="button" class="folder">Sent</button>
+        <button type="button" class="folder">Trash</button>
+        <button type="button">Settings</button>
+      </nav>
+      <div class="list"></div>
+      <div class="read"></div>
+    </div>
+  </div>
   <script type="module" src="/ui.js"></script>
 </body>
 </html>`;
