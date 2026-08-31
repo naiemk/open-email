@@ -39,6 +39,9 @@ chmod +x "$ROOT/dist/start-api.sh" "$ROOT/dist/start-ui.sh"
   echo "FAKE_CHECKOUT=0"
 } >> "$ROOT/dist/.env.ui.example"
 sed -i 's/^UI_MEMORY_LIMIT=32m/UI_MEMORY_LIMIT=512m/' "$ROOT/dist/.env.ui.example"
+if ! grep -q 'command: \["sleep", "infinity"\]' "$ROOT/dist/docker-compose.workers.yml"; then
+  sed -i '/extra_hosts:/i\    command: ["sleep", "infinity"]' "$ROOT/dist/docker-compose.workers.yml"
+fi
 
 python3 - "$ROOT/dist/docker-compose.workers.yml" <<'PY'
 from pathlib import Path
@@ -62,4 +65,5 @@ cat >> "$ROOT/dist/README.md" <<'EOF'
 - Gateway `sites[]` send both `/` and `/api/` to `open-email-ui` so Turnstile/opt rate limits stay on the **node**.
 - After `install-gateway.sh`, add `client_max_body_size 25m;` inside `~/services/gateway/apps/open-email/sites.conf` (packager default is 64k) and reload.
 - Images: `ghcr.io/naiemk/open-email-api:main` and `ghcr.io/naiemk/open-email-ui:main`.
+- Skip `install-nodes` only if you do not want the idle worker; SMTP and **DAL** live on the UI container.
 EOF
