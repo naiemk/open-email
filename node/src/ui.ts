@@ -3,6 +3,7 @@
 import { bytesToHex, hexToBytes, type Hex } from "viem";
 import { generateDek, unwrapDek, wrapDek } from "../../client/src/dek.ts";
 import { openEnvelope } from "../../client/src/envelope.ts";
+import { applyField, isFormControlTag, isValidOeId, mailboxPreview } from "./ui-fields.ts";
 
 const PRF_SALT = new Uint8Array(32);
 new TextEncoder().encode("open-email/prf-kek/v1").forEach((b, i) => {
@@ -36,6 +37,9 @@ type State = {
   name: string;
   dekPrivate: Uint8Array | null;
   error: string;
+  fakeCheckout: boolean;
+  turnstileSiteKey: string;
+  turnstileToken: string;
   signup: {
     oeId: string;
     credentialId: string;
@@ -66,6 +70,9 @@ const state: State = {
   name: "",
   dekPrivate: null,
   error: "",
+  fakeCheckout: false,
+  turnstileSiteKey: "",
+  turnstileToken: "",
   signup: {
     oeId: "",
     credentialId: "",
@@ -93,25 +100,39 @@ if (app) {
 }
 
 async function boot(): Promise<void> {
-  const meta = (await (await fetch("/meta")).json()) as { domain: string; nodeKey: Hex };
-  state.domain = meta.domain;
-  state.nodeKey = meta.nodeKey;
+  const typed = document.querySelector("[data-act=oeId]");
+  if (typed instanceof HTMLInputElement && typed.value) state.signup.oeId = typed.value;
+  render();
+  try {
+    const meta = (await (await fetch("/meta")).json()) as {
+      domain: string;
+      nodeKey: Hex;
+      fakeCheckout?: boolean;
+      turnstileSiteKey?: string;
+    };
+    state.domain = meta.domain;
+    state.nodeKey = meta.nodeKey;
+    state.fakeCheckout = Boolean(meta.fakeCheckout);
+    state.turnstileSiteKey = meta.turnstileSiteKey ?? "";
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+  }
   render();
 }
 
 function onInput(e: Event): void {
   const t = e.target as HTMLElement;
   if (!(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement)) return;
-  if (t.dataset.act === "compose-to") state.composeTo = t.value;
-  if (t.dataset.act === "compose-subject") state.composeSubject = t.value;
-  if (t.dataset.act === "compose-body") state.composeBody = t.value;
-  if (t.dataset.act === "query") {
-    state.query = t.value;
-    if (e.type === "change") render();
+  applyField(state, t.dataset.act, t.value);
+  if (t.dataset.act === "oeId") {
+    const preview = app?.querySelector("[data-mailbox-preview]");
+    if (preview) preview.textContent = mailboxPreview(state.signup.oeId, state.domain);
   }
+  if (t.dataset.act === "query" && e.type === "change") render();
 }
 
 function onClick(e: Event): void {
+  if (isFormControlTag((e.target as HTMLElement).tagName)) return;
   const el = (e.target as HTMLElement).closest("[data-act]") as HTMLElement | null;
   if (!el) return;
   const act = el.dataset.act;
@@ -152,7 +173,7 @@ function onClick(e: Event): void {
 
 async function createPasskey(): Promise<void> {
   const oeId = state.signup.oeId.trim();
-  if (!oeId) throw new Error("Pick an OE id");
+  if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters and contain no dots");
   const userId = crypto.getRandomValues(new Uint8Array(16));
   const cred = (await navigator.credentials.create({
     publicKey: {
@@ -177,13 +198,14 @@ async function createPasskey(): Promise<void> {
 
 async function createInvoice(): Promise<void> {
   if (!state.signup.credentialId) throw new Error("Create a passkey first");
+  if (!state.fakeCheckout && !state.turnstileToken) throw new Error("Complete the Turnstile check");
   const res = await fetch("/signup/invoice", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       credentialId: state.signup.credentialId,
       oeId: state.signup.oeId.trim(),
-      turnstile: "ok",
+      turnstile: turnstileToken(),
     }),
   });
   const body = (await res.json()) as { error?: string; id: string; payLink: string; status: string };
@@ -265,6 +287,7 @@ async function unlock(): Promise<void> {
   if (!cred) throw new Error("Unlock cancelled");
   const kek = prfFrom(cred);
   const oeId = state.signup.oeId.trim();
+  if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters and contain no dots");
   const name = location.hostname === "testnet.crypted.email" || state.domain === "testnet.crypted.email"
     ? `${oeId}.testnet`
     : oeId;
@@ -323,7 +346,7 @@ async function sendMail(): Promise<void> {
       to: state.composeTo.trim(),
       subject: state.composeSubject,
       body: state.composeBody,
-      turnstile: "ok",
+      turnstile: turnstileToken(),
     }),
   });
   if (!res.ok) {
@@ -380,8 +403,14 @@ function visible(): Mail[] {
 
 function render(): void {
   if (!app) return;
+  const active = document.activeElement as HTMLElement | null;
+  const act = active?.dataset?.act;
+  const pos =
+    active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active.selectionStart : null;
   if (state.screen === "signup") {
     app.innerHTML = signupHtml();
+    restoreFocus(act, pos);
+    mountTurnstile();
     return;
   }
   if (state.screen === "settings") {
@@ -429,6 +458,7 @@ function render(): void {
         <label>To</label><input type="text" data-act="compose-to" value="${esc(state.composeTo)}">
         <label>Subject</label><input type="text" data-act="compose-subject" value="${esc(state.composeSubject)}">
         <textarea placeholder="Write…" data-act="compose-body">${esc(state.composeBody)}</textarea>
+        ${turnstileSlot()}
         <div>
           <button type="button" data-act="send">Send</button>
           <button type="button" data-act="close-compose">Discard</button>
@@ -437,6 +467,8 @@ function render(): void {
           : ""
       }
     </div>`;
+  restoreFocus(act, pos);
+  mountTurnstile();
 }
 
 function signupHtml(): string {
@@ -445,12 +477,17 @@ function signupHtml(): string {
     <h1>${esc(state.domain)}</h1>
     <p>Create a passkey, pick an OE id, pay, save the recovery secret once, then this node opts you in.</p>
     ${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}
-    <label>OE id</label>
-    <input type="text" data-act="oeId" value="${esc(s.oeId)}" ${s.credentialId ? "readonly" : ""}>
+    <label for="oe-id">OE id</label>
+    <div class="id-row">
+      <input id="oe-id" type="text" data-act="oeId" value="${esc(s.oeId)}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="alice" ${s.credentialId ? "readonly" : ""}>
+      <span class="suffix">@${esc(state.domain)}</span>
+    </div>
+    <p class="hint" data-mailbox-preview>${esc(mailboxPreview(s.oeId, state.domain))}</p>
+    ${!s.payLink ? turnstileSlot() : ""}
     <p><button type="button" data-act="create-passkey"${s.credentialId ? " disabled" : ""}>Create passkey</button>
        <button type="button" data-act="unlock">Unlock existing</button></p>
     ${s.credentialId ? `<p>Passkey ready. <button type="button" data-act="invoice">Continue to invoice</button></p>` : ""}
-    ${s.payLink ? `<p>Invoice ${esc(s.status)}. Pay in the frame, then register.</p><iframe src="${esc(s.payLink)}" title="Pay"></iframe>
+    ${s.payLink ? `<p>Invoice ${esc(s.status)}. <a href="${esc(s.payLink)}" target="_blank" rel="noopener">Open checkout</a>, then register.</p>
       ${s.status === "paid" ? `<p><button type="button" data-act="register">Register</button></p>` : ""}` : ""}
     ${s.recovery ? `<p><b>Recovery secret</b> (once). Lose every device and this secret → the mailbox is gone.</p>
       <pre class="secret">${esc(s.recovery)}</pre>
@@ -475,6 +512,45 @@ function settingsHtml(): string {
     <p style="opacity:0.45">Plus $4/mo · 5 GB · greyed</p>
     <p><button type="button" data-act="mail">Back to mail</button></p>
   </div>`;
+}
+
+function turnstileToken(): string {
+  if (state.fakeCheckout) return "ok";
+  if (!state.turnstileToken) throw new Error("Complete the Turnstile check");
+  return state.turnstileToken;
+}
+
+function turnstileSlot(): string {
+  if (state.fakeCheckout || !state.turnstileSiteKey) return "";
+  return `<div id="turnstile"></div>`;
+}
+
+function restoreFocus(act: string | undefined, pos: number | null): void {
+  if (!app || !act) return;
+  const el = app.querySelector(`[data-act="${act}"]`);
+  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
+  el.focus();
+  if (pos != null) el.setSelectionRange(pos, pos);
+}
+
+function mountTurnstile(): void {
+  const host = app?.querySelector("#turnstile");
+  if (!(host instanceof HTMLElement) || state.fakeCheckout || !state.turnstileSiteKey) return;
+  const api = (
+    window as unknown as {
+      turnstile?: { render: (el: HTMLElement, opts: { sitekey: string; callback: (token: string) => void }) => void };
+    }
+  ).turnstile;
+  if (!api) {
+    window.setTimeout(mountTurnstile, 200);
+    return;
+  }
+  api.render(host, {
+    sitekey: state.turnstileSiteKey,
+    callback: (token) => {
+      state.turnstileToken = token;
+    },
+  });
 }
 
 function smtpFrom(): string {

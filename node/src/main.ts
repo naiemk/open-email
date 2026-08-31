@@ -72,6 +72,7 @@ await startNode({
     },
     invoices: createMemoryInvoices(),
     fakeCheckout: process.env.FAKE_CHECKOUT === "1",
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? "",
   },
   send: {
     turnstile: {

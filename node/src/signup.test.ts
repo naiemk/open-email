@@ -70,6 +70,24 @@ describe("paid signup through the node", () => {
     await stack?.stop();
   });
 
+  it("serves a signup shell with an OE id field, not a fake inbox", async () => {
+    const html = await (await fetch(nodeA.url + "/")).text();
+    expect(html).toContain('data-act="oeId"');
+    expect(html).toContain("OE id");
+    expect(html).not.toContain(">Inbox<");
+  });
+
+  it("advertises checkout mode on /meta", async () => {
+    const meta = (await (await fetch(`${nodeA.url}/meta`)).json()) as {
+      domain: string;
+      fakeCheckout: boolean;
+      turnstileSiteKey: string;
+    };
+    expect(meta.domain).toBe(domain);
+    expect(meta.fakeCheckout).toBe(true);
+    expect(meta.turnstileSiteKey).toBe("");
+  });
+
   it("rejects a short or dotted OE id before invoice", async () => {
     const short = await fetch(`${nodeA.url}/signup/invoice`, {
       method: "POST",
