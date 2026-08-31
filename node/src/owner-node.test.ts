@@ -132,7 +132,9 @@ describe("owner-registered node through receive", () => {
     expect(plaintext).toContain("hello after owner registration");
 
     const home = await (await fetch(nodeA.url)).text();
-    expect(home).toContain(domain);
+    expect(home).toContain('id="root"');
+    const meta = (await (await fetch(`${nodeA.url}/meta`)).json()) as { domain: string };
+    expect(meta.domain).toBe(domain);
   });
 
   it("rejects opt-in to an unapproved node", async () => {

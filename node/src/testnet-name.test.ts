@@ -103,7 +103,9 @@ describe("testnet names through receive", () => {
     expect(plaintext).toContain("hello on a testnet name");
 
     const home = await (await fetch(nodeA.url)).text();
-    expect(home).toContain(domain);
+    expect(home).toContain('id="root"');
+    const meta = (await (await fetch(`${nodeA.url}/meta`)).json()) as { domain: string };
+    expect(meta.domain).toBe(domain);
   });
 
   it("rejects the registry name as a local-part and a recipient on another domain", async () => {

@@ -131,12 +131,11 @@ describe("headless mail through node A", () => {
     expect(plaintext).toContain("hello from the rest of the internet");
 
     const home = await (await fetch(nodeA.url)).text();
-    expect(home).toContain("node-a.test");
+    expect(home).toContain('id="root"');
+    const meta = (await (await fetch(`${nodeA.url}/meta`)).json()) as { domain: string };
+    expect(meta.domain).toBe("node-a.test");
     expect(home).not.toContain("node-b.test");
     expect(home).not.toContain(bytesToHex(session.dek.privateKey));
-    expect(home).toContain("Inbox");
-    expect(home).toContain("Sent");
-    expect(home).toContain("Trash");
     expect(home).not.toContain("KEK hex");
   });
 
