@@ -3,6 +3,7 @@
 import { bytesToHex, hexToBytes, type Hex } from "viem";
 import { generateDek, unwrapDek, wrapDek } from "../../client/src/dek.ts";
 import { openEnvelope } from "../../client/src/envelope.ts";
+import { p256CoordsFromPublicKey, webAuthnUserError } from "../../client/src/webauthn-p256.ts";
 import { applyField, isFormControlTag, isValidOeId, mailboxPreview } from "./ui-fields.ts";
 
 const PRF_SALT = new Uint8Array(32);
@@ -37,6 +38,7 @@ type State = {
   name: string;
   dekPrivate: Uint8Array | null;
   error: string;
+  busy: boolean;
   fakeCheckout: boolean;
   turnstileSiteKey: string;
   turnstileToken: string;
@@ -70,6 +72,7 @@ const state: State = {
   name: "",
   dekPrivate: null,
   error: "",
+  busy: false,
   fakeCheckout: false,
   turnstileSiteKey: "",
   turnstileToken: "",
@@ -136,7 +139,19 @@ function onClick(e: Event): void {
   const el = (e.target as HTMLElement).closest("[data-act]") as HTMLElement | null;
   if (!el) return;
   const act = el.dataset.act;
+  const usesPasskey =
+    act === "create-passkey" ||
+    act === "unlock" ||
+    act === "register" ||
+    act === "saved" ||
+    act === "opt-out" ||
+    act === "opt-in";
+  if (usesPasskey && state.busy) return;
   void (async () => {
+    if (usesPasskey) {
+      state.busy = true;
+      render();
+    }
     try {
       if (act === "folder") {
         state.folder = el.dataset.folder as Folder;
@@ -165,7 +180,9 @@ function onClick(e: Event): void {
       if (act === "opt-in") await optInExisting();
       state.error = "";
     } catch (err) {
-      state.error = err instanceof Error ? err.message : String(err);
+      state.error = webAuthnUserError(err);
+    } finally {
+      state.busy = false;
     }
     render();
   })();
@@ -187,8 +204,13 @@ async function createPasskey(): Promise<void> {
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("Passkey was not created");
   const att = cred.response as AuthenticatorAttestationResponse;
-  const spki = new Uint8Array(att.getPublicKey() ?? new ArrayBuffer(0));
-  const { qx, qy } = p256Coords(spki);
+  let spki = new Uint8Array(0);
+  try {
+    spki = new Uint8Array(att.getPublicKey?.() ?? new ArrayBuffer(0));
+  } catch {
+    /* Safari may omit getPublicKey(); attestation COSE is enough. */
+  }
+  const { qx, qy } = p256CoordsFromPublicKey(spki, new Uint8Array(att.attestationObject));
   const kek = prfFrom(cred);
   state.signup.credentialId = bytesToHex(new Uint8Array(cred.rawId));
   state.signup.qx = qx;
@@ -479,13 +501,13 @@ function signupHtml(): string {
     ${state.error ? `<p class="err">${esc(state.error)}</p>` : ""}
     <label for="oe-id">OE id</label>
     <div class="id-row">
-      <input id="oe-id" type="text" data-act="oeId" value="${esc(s.oeId)}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="alice" ${s.credentialId ? "readonly" : ""}>
+      <input id="oe-id" type="text" data-act="oeId" value="${esc(s.oeId)}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="alice" ${s.credentialId ? "readonly" : ""}>
       <span class="suffix">@${esc(state.domain)}</span>
     </div>
     <p class="hint" data-mailbox-preview>${esc(mailboxPreview(s.oeId, state.domain))}</p>
     ${!s.payLink ? turnstileSlot() : ""}
-    <p><button type="button" data-act="create-passkey"${s.credentialId ? " disabled" : ""}>Create passkey</button>
-       <button type="button" data-act="unlock">Unlock existing</button></p>
+    <p><button type="button" data-act="create-passkey"${s.credentialId || state.busy ? " disabled" : ""}>Create passkey</button>
+       <button type="button" data-act="unlock"${state.busy ? " disabled" : ""}>Unlock existing</button></p>
     ${s.credentialId ? `<p>Passkey ready. <button type="button" data-act="invoice">Continue to invoice</button></p>` : ""}
     ${s.payLink ? `<p>Invoice ${esc(s.status)}. <a href="${esc(s.payLink)}" target="_blank" rel="noopener">Open checkout</a>, then register.</p>
       ${s.status === "paid" ? `<p><button type="button" data-act="register">Register</button></p>` : ""}` : ""}
@@ -583,12 +605,6 @@ function encodeRecovery(kek: Uint8Array, wrap: Uint8Array): string {
     bin += String.fromCharCode(b);
   });
   return `oe-r1.${btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "")}`;
-}
-
-function p256Coords(spki: Uint8Array): { qx: Hex; qy: Hex } {
-  const i = spki.lastIndexOf(0x04);
-  if (i < 0 || i + 65 > spki.length) throw new Error("Passkey is not P-256");
-  return { qx: bytesToHex(spki.slice(i + 1, i + 33)), qy: bytesToHex(spki.slice(i + 33, i + 65)) };
 }
 
 function prfFrom(cred: PublicKeyCredential): Uint8Array {
