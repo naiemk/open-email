@@ -32,18 +32,23 @@ export type RunningNode = {
 
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
   const uiJs = await bundleUi();
+  const trashByName = new Map<string, Set<number>>();
   const smtp = new SMTPServer({
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
     onRcptTo(address, _session, callback) {
       const name = mailboxName(config, address.address);
       if (!name) {
-        callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+        callback(smtpError("No such user here", 550));
         return;
       }
       void config.registry.isOptedIn(name, config.nodeKey).then((ok) => {
         if (!ok) {
-          callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+          callback(smtpError("No such user here", 550));
+          return;
+        }
+        if (config.index.totalSize(name) >= config.index.cap) {
+          callback(smtpError("Insufficient storage", 452));
           return;
         }
         callback();
@@ -61,7 +66,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
         }
         const name = mailboxName(config, rcpt);
         if (!name) {
-          callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+          callback(smtpError("No such user here", 550));
           return;
         }
         void ingest(config, name, rfc5322)
@@ -83,7 +88,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, uiJs);
+    void handleHttp(req, res, config, uiJs, trashByName);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, "127.0.0.1", () => {
@@ -112,15 +117,26 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
 async function ingest(config: NodeConfig, name: string, rfc5322: Uint8Array): Promise<void> {
   const record = await config.registry.nameRecord(name);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
+  const size = blob.byteLength;
+  if (config.index.totalSize(name) + size > config.index.cap) {
+    throw smtpError("Insufficient storage", 452);
+  }
   const cid = await config.blobs.pin(blob);
   const time = Math.floor(Date.now() / 1000);
+  const direction = "in" as const;
   await config.index.append({
     name,
     time,
     cid,
+    size,
+    direction,
     nodeKey: config.nodeKey,
-    signature: signIndexWrite(config.nodeSecret, name, time, cid),
+    signature: signIndexWrite(config.nodeSecret, name, time, cid, size, direction),
   });
+}
+
+function smtpError(message: string, responseCode: number): Error {
+  return Object.assign(new Error(message), { responseCode });
 }
 
 /** SMTP `{oe-id}@testnet.crypted.email` maps to registry name `{oe-id}.testnet`. */
@@ -155,6 +171,7 @@ async function handleHttp(
   res: ServerResponse,
   config: NodeConfig,
   uiJs: string,
+  trashByName: Map<string, Set<number>>,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
@@ -171,7 +188,42 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      json(res, 200, config.index.list(name));
+      const trashed = trashByName.get(name) ?? new Set();
+      json(
+        res,
+        200,
+        config.index.list(name).map((row) => ({ ...row, trashed: trashed.has(row.seq) })),
+      );
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
+      const name = decodeURIComponent(url.pathname.slice("/storage/".length));
+      const total_size = config.index.totalSize(name);
+      json(res, 200, {
+        total_size,
+        cap: config.index.cap,
+        warn: total_size >= Math.floor(config.index.cap * 0.8),
+      });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/trash/")) {
+      const rest = url.pathname.slice("/trash/".length);
+      const slash = rest.lastIndexOf("/");
+      const name = decodeURIComponent(rest.slice(0, slash));
+      const seq = Number(rest.slice(slash + 1));
+      const set = trashByName.get(name) ?? new Set();
+      set.add(seq);
+      trashByName.set(name, set);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
+      const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
+      const seqs = [...(trashByName.get(name) ?? new Set())];
+      const cids = config.index.remove(name, seqs);
+      trashByName.delete(name);
+      for (const cid of cids) config.blobs.unpin(cid);
+      json(res, 200, { ok: true });
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {
