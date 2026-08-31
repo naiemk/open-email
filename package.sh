@@ -39,6 +39,9 @@ chmod +x "$ROOT/dist/start-api.sh" "$ROOT/dist/start-ui.sh"
   echo "FAKE_CHECKOUT=0"
 } >> "$ROOT/dist/.env.ui.example"
 sed -i 's/^UI_MEMORY_LIMIT=32m/UI_MEMORY_LIMIT=512m/' "$ROOT/dist/.env.ui.example"
+if ! grep -q 'command: \["sleep", "infinity"\]' "$ROOT/dist/docker-compose.workers.yml"; then
+  sed -i '/extra_hosts:/i\    command: ["sleep", "infinity"]' "$ROOT/dist/docker-compose.workers.yml"
+fi
 
 python3 - "$ROOT/dist/docker-compose.workers.yml" <<'PY'
 from pathlib import Path
