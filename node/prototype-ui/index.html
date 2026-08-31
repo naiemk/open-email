@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — node UI (issue 49)</title>
+  <!--
+    Three variants of the node mail UI (list / read / compose + settings / signup stubs),
+    switchable via ?variant=, throwaway for Proton-inspired node UI sketch.
+    A = Split (Proton desktop)  B = Stack (phone)  C = Command (search-first)
+  -->
+  <style>
+    :root { --pad: 12px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+    button, input, textarea { font: inherit; }
+    .proto-banner {
+      background: #111; color: #fc0; padding: 6px 12px; font-size: 12px;
+    }
+    .state-dump {
+      background: #1b1b1b; color: #9f9; padding: 4px 12px; font: 11px/1.3 ui-monospace, monospace;
+      white-space: nowrap; overflow: auto; margin: 0; max-height: 2.4em;
+    }
+    #root { min-height: 70vh; }
+    .switcher {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; display: flex; align-items: center; gap: 10px;
+      background: #111; color: #fff; border-radius: 999px; padding: 8px 14px;
+      box-shadow: 0 8px 24px #0008; font-size: 13px; user-select: none;
+    }
+    .switcher button {
+      background: #333; color: #fff; border: 0; border-radius: 999px;
+      width: 32px; height: 32px; cursor: pointer;
+    }
+    .hidden { display: none !important; }
+
+    /* A — Split */
+    .a { display: grid; grid-template-columns: 200px 280px 1fr; height: calc(100vh - 90px); background: #f4f1fb; color: #1c1230; }
+    .a nav { background: #2b1a4e; color: #eee; padding: var(--pad); display: flex; flex-direction: column; gap: 6px; }
+    .a nav h1 { font-size: 16px; margin: 0 0 8px; color: #c4b5fd; }
+    .a nav button, .a .folder { text-align: left; background: transparent; color: inherit; border: 0; padding: 8px; border-radius: 8px; cursor: pointer; }
+    .a .folder.on, .a nav button.on { background: #6d4aff; }
+    .a .compose { background: #6d4aff; color: #fff; border: 0; padding: 10px; border-radius: 10px; cursor: pointer; }
+    .a .meter { margin-top: auto; font-size: 12px; color: #c4b5fd; }
+    .a .meter i { display: block; height: 6px; background: #6d4aff; border-radius: 4px; margin-top: 4px; }
+    .a .list { border-right: 1px solid #ddd; overflow: auto; background: #fff; }
+    .a .search { padding: 8px; }
+    .a .search input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+    .a .row { padding: 10px 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .a .row.on { background: #efe8ff; }
+    .a .row b { display: block; }
+    .a .row span { color: #666; font-size: 12px; }
+    .a .read { padding: 20px 28px; overflow: auto; background: #fff; }
+    .a .read h2 { margin: 0 0 8px; }
+    .a .composer { position: absolute; right: 24px; bottom: 72px; width: 420px; background: #fff; border-radius: 12px; box-shadow: 0 12px 40px #0003; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .a .sheet { position: fixed; inset: 0; background: #fff; padding: 32px; overflow: auto; }
+
+    /* B — Stack */
+    .b { max-width: 420px; margin: 0 auto; min-height: calc(100vh - 90px); background: #f2f2f7; display: flex; flex-direction: column; }
+    .b header { padding: 16px; background: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .b header h1 { margin: 0; font-size: 22px; }
+    .b .search { margin: 0 16px 8px; }
+    .b .search input { width: 100%; padding: 10px; border: 0; border-radius: 10px; background: #e5e5ea; }
+    .b .list { flex: 1; overflow: auto; }
+    .b .card { background: #fff; margin: 0 16px 8px; padding: 12px; border-radius: 12px; }
+    .b .read { flex: 1; background: #fff; padding: 16px; overflow: auto; }
+    .b .fab { position: fixed; right: calc(50% - 180px); bottom: 88px; width: 56px; height: 56px; border-radius: 50%; border: 0; background: #007aff; color: #fff; font-size: 24px; }
+    .b .tabs { display: flex; background: #fff; border-top: 1px solid #ddd; }
+    .b .tabs button { flex: 1; border: 0; background: #fff; padding: 12px 4px; color: #8e8e93; }
+    .b .tabs button.on { color: #007aff; font-weight: 600; }
+    .b .composer, .b .sheet { flex: 1; background: #fff; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+    /* C — Command */
+    .c { background: #0c0c0c; color: #e8e4d9; min-height: calc(100vh - 90px); font-family: ui-serif, Georgia, serif; }
+    .c .top { padding: 20px 24px 8px; display: flex; gap: 12px; align-items: center; }
+    .c .top input { flex: 1; background: #1a1a1a; color: #e8e4d9; border: 1px solid #333; padding: 12px 16px; font-size: 16px; }
+    .c .chip { font: 12px ui-monospace, monospace; border: 1px solid #444; padding: 4px 8px; }
+    .c .seg { padding: 0 24px 12px; display: flex; gap: 8px; }
+    .c .seg button { background: transparent; color: #888; border: 0; padding: 6px 0; margin-right: 16px; cursor: pointer; }
+    .c .seg button.on { color: #e8e4d9; border-bottom: 2px solid #e8e4d9; }
+    .c .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 0; border-top: 1px solid #222; }
+    .c .row { padding: 14px 24px; border-bottom: 1px solid #222; cursor: pointer; }
+    .c .row.on { background: #161616; }
+    .c .read { padding: 24px; border-left: 1px solid #222; }
+    .c .cmd { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: min(560px, 92vw); background: #151515; border: 1px solid #333; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .c .cmd input, .c .cmd textarea { background: #0c0c0c; color: #e8e4d9; border: 1px solid #333; padding: 8px; }
+    .c .sheet { padding: 32px 24px; max-width: 640px; }
+
+    label { display: block; font-size: 12px; opacity: 0.7; }
+    input[type=text], input[type=search], textarea { width: 100%; padding: 8px; }
+    textarea { min-height: 120px; }
+  </style>
+</head>
+<body>
+  <div class="proto-banner">PROTOTYPE · throwaway · <code>npm run prototype:node-ui</code> · not the tracer</div>
+  <pre class="state-dump" id="dump"></pre>
+  <div id="root"></div>
+  <div class="switcher" id="switcher">
+    <button type="button" id="prev" aria-label="previous variant">←</button>
+    <span id="label"></span>
+    <button type="button" id="next" aria-label="next variant">→</button>
+  </div>
+  <script>
+    const VARIANTS = [
+      { key: "A", name: "Split (Proton desktop)" },
+      { key: "B", name: "Stack (phone)" },
+      { key: "C", name: "Command (search-first)" },
+    ];
+    const MESSAGES = [
+      { id: "1", dir: "in", folder: "inbox", from: "Gmail user", email: "pat@gmail.com", sub: "Lunch tomorrow?", preview: "Are you free at 1?", body: "Are you free at 1? I can do the usual place." },
+      { id: "2", dir: "in", folder: "inbox", from: "Relay", email: "noreply@shop.test", sub: "Your receipt", preview: "Order #4412", body: "Thanks for buying socks. Order #4412." },
+      { id: "3", dir: "out", folder: "sent", from: "you", email: "alice@testnet.crypted.email", sub: "Re: Lunch", preview: "Yes, 1 works.", body: "Yes, 1 works. See you there." },
+      { id: "4", dir: "in", folder: "trash", from: "Spamco", email: "win@spam.test", sub: "You won", preview: "Click here", body: "This would have counted toward 5MB until emptied." },
+    ];
+
+    const state = {
+      variant: "A",
+      screen: "mail",
+      folder: "inbox",
+      selected: "1",
+      query: "",
+      composing: false,
+      optedIn: true,
+      usedMb: 3.2,
+      capMb: 5,
+    };
+
+    function variantKey() {
+      const v = new URLSearchParams(location.search).get("variant") || "A";
+      return VARIANTS.some((x) => x.key === v) ? v : "A";
+    }
+
+    function setVariant(key) {
+      const url = new URL(location.href);
+      url.searchParams.set("variant", key);
+      history.replaceState(null, "", url);
+      state.variant = key;
+      render();
+    }
+
+    function cycle(delta) {
+      const i = VARIANTS.findIndex((x) => x.key === state.variant);
+      const next = VARIANTS[(i + delta + VARIANTS.length) % VARIANTS.length];
+      setVariant(next.key);
+    }
+
+    function visibleMessages() {
+      const q = state.query.trim().toLowerCase();
+      return MESSAGES.filter((m) => {
+        if (state.folder === "inbox" && m.folder !== "inbox") return false;
+        if (state.folder === "sent" && m.folder !== "sent") return false;
+        if (state.folder === "trash" && m.folder !== "trash") return false;
+        if (!q) return true;
+        return (m.sub + m.body + m.from + m.email).toLowerCase().includes(q);
+      });
+    }
+
+    function selected() {
+      return MESSAGES.find((m) => m.id === state.selected);
+    }
+
+    function dump() {
+      document.getElementById("dump").textContent = JSON.stringify(
+        { ...state, visible: visibleMessages().map((m) => m.id) },
+        null,
+        2,
+      );
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    }
+
+    function composerHtml(cls) {
+      return `<div class="${cls}">
+        <div><b>New message</b> · from alice@testnet.crypted.email</div>
+        <label>To</label><input type="text" value="pat@gmail.com">
+        <label>Subject</label><input type="text" value="">
+        <textarea placeholder="Write…"></textarea>
+        <div>
+          <button type="button" data-act="send">Send (stub)</button>
+          <button type="button" data-act="close-compose">Discard</button>
+        </div>
+      </div>`;
+    }
+
+    function signupHtml(wrap) {
+      return `<div class="${wrap}">
+        <h2>Create mailbox</h2>
+        <p>Passkey first · then pay 1 USDC (Sepolia) · then recovery secret · then opt-in.</p>
+        <label>OE id</label><input type="text" value="alice">
+        <p><button type="button">Create passkey (stub)</button></p>
+        <p>Turnstile · iframe <code>/pay</code> would sit here.</p>
+        <p><button type="button" data-act="paid">Pretend paid + register</button></p>
+        <div class="hidden" id="secret-box">
+          <p><b>Recovery secret</b> (once). Lose device + this → mailbox gone.</p>
+          <pre>oak-7Kettle-ridge-22</pre>
+          <button type="button" data-act="saved">I saved it</button>
+        </div>
+      </div>`;
+    }
+
+    function settingsHtml(wrap) {
+      const pct = Math.round((state.usedMb / state.capMb) * 100);
+      return `<div class="${wrap}">
+        <h2>Settings</h2>
+        <p>Opted in to this node: <b>${state.optedIn ? "yes" : "no"}</b>
+          <button type="button" data-act="toggle-opt">${state.optedIn ? "Opt out" : "Opt in"}</button></p>
+        <p>Storage ${state.usedMb} / ${state.capMb} MB (${pct}%). Warn at 80%.</p>
+        <h3>Plans (decorative)</h3>
+        <p>Free testnet · 5 MB · view only, does not charge.</p>
+        <p>Plus $4/mo · 5 GB · greyed</p>
+        <p><button type="button" data-act="mail">Back to mail</button></p>
+      </div>`;
+    }
+
+    function listRows(style) {
+      return visibleMessages().map((m) => {
+        const on = m.id === state.selected ? " on" : "";
+        return `<div class="${style} row${on}" data-act="select" data-id="${m.id}">
+          <b>${esc(m.sub)}</b><span>${esc(m.from)} — ${esc(m.preview)}</span>
+        </div>`;
+      }).join("") || `<div class="${style} row">No messages in this view.</div>`;
+    }
+
+    function readHtml() {
+      const m = selected();
+      if (!m) return `<p>Select a message.</p>`;
+      return `<h2>${esc(m.sub)}</h2><p>${esc(m.from)} &lt;${esc(m.email)}&gt;</p><p>${esc(m.body)}</p>
+        <p><button type="button" data-act="trash">Move to trash (stub)</button></p>`;
+    }
+
+    function renderA() {
+      if (state.screen === "signup") return signupHtml("a-sheet sheet");
+      if (state.screen === "settings") return settingsHtml("a-sheet sheet");
+      return `<div class="a">
+        <nav>
+          <h1>testnet.crypted.email</h1>
+          <button class="compose" data-act="compose">Compose</button>
+          <button class="folder${state.folder === "inbox" ? " on" : ""}" data-act="folder" data-folder="inbox">Inbox</button>
+          <button class="folder${state.folder === "sent" ? " on" : ""}" data-act="folder" data-folder="sent">Sent</button>
+          <button class="folder${state.folder === "trash" ? " on" : ""}" data-act="folder" data-folder="trash">Trash</button>
+          <button data-act="settings">Settings</button>
+          <button data-act="signup">Signup (first run)</button>
+          <div class="meter">Storage ${state.usedMb}/${state.capMb} MB<i style="width:${(state.usedMb / state.capMb) * 100}%"></i></div>
+        </nav>
+        <div class="list">
+          <div class="search"><input type="search" placeholder="Search this view (last 100)" value="${esc(state.query)}" data-act="query"></div>
+          ${listRows("a")}
+          <div class="row"><button type="button">Load more</button></div>
+        </div>
+        <div class="read">${readHtml()}</div>
+        ${state.composing ? composerHtml("composer") : ""}
+      </div>`;
+    }
+
+    function renderB() {
+      if (state.screen === "signup") return `<div class="b">${signupHtml("sheet")}</div>`;
+      if (state.screen === "settings") return `<div class="b">${settingsHtml("sheet")}<div class="tabs">
+        <button data-act="mail">Mail</button><button class="on">Settings</button>
+      </div></div>`;
+      if (state.composing) return `<div class="b">${composerHtml("composer")}</div>`;
+      const title = state.folder[0].toUpperCase() + state.folder.slice(1);
+      const reading = selected() && state.screen === "read";
+      return `<div class="b">
+        <header>
+          ${reading ? `<button type="button" data-act="mail">Back</button>` : `<h1>${title}</h1>`}
+          <span>alice</span>
+        </header>
+        ${reading ? `<div class="read">${readHtml()}</div>` : `
+          <div class="search"><input type="search" placeholder="Search" value="${esc(state.query)}" data-act="query"></div>
+          <div class="list">${visibleMessages().map((m) => `<div class="card" data-act="open" data-id="${m.id}"><b>${esc(m.sub)}</b><div>${esc(m.preview)}</div></div>`).join("")}
+            <p style="text-align:center"><button type="button">Load more</button></p></div>
+          <button class="fab" data-act="compose">✎</button>`}
+        <div class="tabs">
+          <button class="${state.folder === "inbox" && !reading ? "on" : ""}" data-act="folder" data-folder="inbox">Inbox</button>
+          <button class="${state.folder === "sent" && !reading ? "on" : ""}" data-act="folder" data-folder="sent">Sent</button>
+          <button class="${state.folder === "trash" && !reading ? "on" : ""}" data-act="folder" data-folder="trash">Trash</button>
+          <button data-act="settings">Settings</button>
+        </div>
+      </div>`;
+    }
+
+    function renderC() {
+      if (state.screen === "signup") return `<div class="c">${signupHtml("sheet")}</div>`;
+      if (state.screen === "settings") return `<div class="c">${settingsHtml("sheet")}</div>`;
+      return `<div class="c">
+        <div class="top">
+          <input type="search" placeholder="Search headers + body · last 100 · then load more" value="${esc(state.query)}" data-act="query">
+          <span class="chip">${state.usedMb}/${state.capMb} MB</span>
+          <span class="chip">${state.optedIn ? "opted in" : "opted out"}</span>
+          <button type="button" data-act="compose">Compose</button>
+          <button type="button" data-act="settings">Settings</button>
+          <button type="button" data-act="signup">Signup</button>
+        </div>
+        <div class="seg">
+          <button class="${state.folder === "inbox" ? "on" : ""}" data-act="folder" data-folder="inbox">Inbox</button>
+          <button class="${state.folder === "sent" ? "on" : ""}" data-act="folder" data-folder="sent">Sent</button>
+          <button class="${state.folder === "trash" ? "on" : ""}" data-act="folder" data-folder="trash">Trash</button>
+        </div>
+        <div class="grid">
+          <div>${listRows("c")}<div class="row"><button type="button">Load more</button></div></div>
+          <div class="read">${readHtml()}</div>
+        </div>
+        ${state.composing ? composerHtml("cmd") : ""}
+      </div>`;
+    }
+
+    function render() {
+      state.variant = variantKey();
+      const root = document.getElementById("root");
+      root.innerHTML = state.variant === "B" ? renderB() : state.variant === "C" ? renderC() : renderA();
+      const meta = VARIANTS.find((x) => x.key === state.variant);
+      document.getElementById("label").textContent = `${meta.key} (${meta.name})`;
+      dump();
+    }
+
+    document.getElementById("root").addEventListener("input", (e) => {
+      const t = e.target;
+      if (t.dataset.act === "query") {
+        state.query = t.value;
+        dump();
+      }
+    });
+    document.getElementById("root").addEventListener("change", (e) => {
+      const t = e.target;
+      if (t.dataset.act === "query") render();
+    });
+    document.getElementById("root").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.dataset.act === "query") render();
+    });
+
+    document.getElementById("root").addEventListener("click", (e) => {
+      const el = e.target.closest("[data-act]");
+      if (!el) return;
+      const act = el.dataset.act;
+      if (act === "folder") {
+        state.folder = el.dataset.folder;
+        state.screen = "mail";
+        state.composing = false;
+        const first = visibleMessages()[0];
+        state.selected = first ? first.id : "";
+      }
+      if (act === "select" || act === "open") {
+        state.selected = el.dataset.id;
+        if (act === "open") state.screen = "read";
+      }
+      if (act === "compose") state.composing = true;
+      if (act === "close-compose" || act === "send") state.composing = false;
+      if (act === "settings") { state.screen = "settings"; state.composing = false; }
+      if (act === "signup") { state.screen = "signup"; state.composing = false; }
+      if (act === "mail") { state.screen = "mail"; }
+      if (act === "toggle-opt") state.optedIn = !state.optedIn;
+      if (act === "paid") document.getElementById("secret-box")?.classList.remove("hidden");
+      if (act === "saved") { state.screen = "mail"; state.optedIn = true; }
+      render();
+    });
+
+    document.getElementById("prev").onclick = () => cycle(-1);
+    document.getElementById("next").onclick = () => cycle(1);
+    document.addEventListener("keydown", (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+
+    state.variant = variantKey();
+    render();
+  </script>
+</body>
+</html>

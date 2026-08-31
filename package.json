@@ -9,7 +9,8 @@
     "test:client": "vitest run client",
     "test:relayer": "vitest run relayer",
     "test:l2": "RUN_L2_TESTS=1 vitest run relayer/src/l2.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prototype:node-ui": "node node/prototype-ui/serve.mjs"
   },
   "dependencies": {
     "@hpke/core": "^1.9.0",
