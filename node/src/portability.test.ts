@@ -117,7 +117,7 @@ describe("two-node portable mailbox", () => {
     expect(rowsB).toEqual(rowsA);
     expect(rowsB).toHaveLength(1);
 
-    const blob = new Uint8Array(await (await fetch(`${nodeB.url}/blobs/${rowsB[0]!.cid}`)).arrayBuffer());
+    const blob = new Uint8Array(await (await fetch(`${nodeB.url}/blobs/${rowsB[0]!.cid}?name=alice`)).arrayBuffer());
     const dekPrivate = unwrapDek(hexToBytes(session.wrappedDek), session.kek);
     const plaintext = new TextDecoder().decode(await openEnvelope(dekPrivate, "alice", blob));
     expect(plaintext).toContain("portable mail");
@@ -150,7 +150,7 @@ describe("two-node portable mailbox", () => {
     const after = (await (await fetch(`${nodeB.url}/index/alice`)).json()) as unknown[];
     expect(after).toHaveLength(before.length);
     const blob = new Uint8Array(
-      await (await fetch(`${nodeB.url}/blobs/${(after[0] as { cid: string }).cid}`)).arrayBuffer(),
+      await (await fetch(`${nodeB.url}/blobs/${(after[0] as { cid: string }).cid}?name=alice`)).arrayBuffer(),
     );
     const dekPrivate = unwrapDek(hexToBytes(session.wrappedDek), session.kek);
     expect(new TextDecoder().decode(await openEnvelope(dekPrivate, "alice", blob))).toContain("portable mail");

@@ -108,7 +108,9 @@ describe("headless mail through node A", () => {
     expect(rows[0]?.name).toBe("alice");
     expect(rows[0]?.direction).toBe("in");
 
-    const blobRes = await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`);
+    expect((await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).status).toBe(404);
+    const blobRes = await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}?name=alice`);
+    expect(blobRes.status).toBe(200);
     const blob = new Uint8Array(await blobRes.arrayBuffer());
     expect(rows[0]?.size).toBe(blob.byteLength);
 
@@ -132,5 +134,33 @@ describe("headless mail through node A", () => {
     expect(home).toContain("node-a.test");
     expect(home).not.toContain("node-b.test");
     expect(home).not.toContain(bytesToHex(session.dek.privateKey));
+    expect(home).toContain("Inbox");
+    expect(home).toContain("Sent");
+    expect(home).toContain("Trash");
+    expect(home).not.toContain("KEK hex");
+  });
+
+  it("pages the index newest-first and caps a page at 100", async () => {
+    for (const n of [2, 3]) {
+      const sent = await sendSmtp({
+        host: "127.0.0.1",
+        port: nodeA.smtpPort,
+        from: "gmail-user@example.com",
+        to: "alice@node-a.test",
+        data: [
+          "From: gmail-user@example.com",
+          "To: alice@node-a.test",
+          `Subject: mail ${n}`,
+          "",
+          `body ${n}`,
+          "",
+        ].join("\r\n"),
+      });
+      expect(sent.dataCode).toBe(250);
+    }
+    const page = (await (await fetch(`${nodeA.url}/index/alice?limit=2`)).json()) as { seq: number }[];
+    expect(page.map((r) => r.seq)).toEqual([3, 2]);
+    const older = (await (await fetch(`${nodeA.url}/index/alice?limit=2&before=2`)).json()) as { seq: number }[];
+    expect(older.map((r) => r.seq)).toEqual([1]);
   });
 });

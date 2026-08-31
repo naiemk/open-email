@@ -20,6 +20,7 @@ export type SignupConfig = {
   relayerUrl: string;
   turnstile: { verify: (token: string) => Promise<boolean> };
   invoices: InvoiceBook;
+  fakeCheckout?: boolean;
 };
 
 type AuthBody = {
@@ -134,6 +135,23 @@ export async function handleSignup(
     }
     signup.invoices.cancel(id);
     json(res, 200, { ok: true });
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    signup.fakeCheckout &&
+    url.pathname.startsWith("/signup/invoice/") &&
+    url.pathname.endsWith("/pay")
+  ) {
+    const id = decodeURIComponent(url.pathname.slice("/signup/invoice/".length, -"/pay".length));
+    const invoice = signup.invoices.get(id);
+    if (!invoice || invoice.status !== "awaiting_payment") {
+      json(res, 400, { error: "cannot pay" });
+      return true;
+    }
+    signup.invoices.markPaid(id);
+    json(res, 200, { id, status: "paid" });
     return true;
   }
 
