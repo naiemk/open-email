@@ -1,0 +1,2 @@
+role: idle
+note: DAL and SMTP live on the node UI container, not this worker.

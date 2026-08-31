@@ -23,6 +23,7 @@ export type NodeConfig = {
   index: MailIndex;
   smtpPort?: number;
   httpPort?: number;
+  bindHost?: string;
   signup?: SignupConfig;
   send?: SendConfig;
 };
@@ -123,7 +124,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const smtpPort = await new Promise<number>((resolve, reject) => {
-    const netServer = smtp.listen(config.smtpPort ?? 0, "127.0.0.1", () => {
+    const netServer = smtp.listen(config.smtpPort ?? 0, config.bindHost ?? "127.0.0.1", () => {
       const addr = netServer.address();
       if (!addr || typeof addr === "string") {
         reject(new Error("smtp has no port"));
@@ -137,7 +138,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
     void handleHttp(req, res, config, uiJs, trashByName, takeSendSlot, takeOptSlot);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
-    http.listen(config.httpPort ?? 0, "127.0.0.1", () => {
+    http.listen(config.httpPort ?? 0, config.bindHost ?? "127.0.0.1", () => {
       const addr = http.address();
       if (!addr || typeof addr === "string") {
         reject(new Error("http has no port"));

@@ -69,6 +69,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+!dist/.env.*.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -80,7 +81,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 .output
 
 # Gatsby files
@@ -145,3 +145,4 @@ vite.config.ts.timestamp-*
 # Foundry
 registry/cache/
 broadcast/
+secrets
