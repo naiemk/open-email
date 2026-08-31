@@ -34,8 +34,12 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
     onRcptTo(address, _session, callback) {
-      const local = localPart(address.address);
-      void config.registry.isOptedIn(local, config.nodeKey).then((ok) => {
+      const name = mailboxName(config, address.address);
+      if (!name) {
+        callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+        return;
+      }
+      void config.registry.isOptedIn(name, config.nodeKey).then((ok) => {
         if (!ok) {
           callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
           return;
@@ -53,7 +57,12 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
           callback(new Error("no recipient"));
           return;
         }
-        void ingest(config, localPart(rcpt), rfc5322)
+        const name = mailboxName(config, rcpt);
+        if (!name) {
+          callback(Object.assign(new Error("No such user here"), { responseCode: 550 }));
+          return;
+        }
+        void ingest(config, name, rfc5322)
           .then(() => callback())
           .catch((err: unknown) => callback(err instanceof Error ? err : new Error(String(err))));
       });
@@ -112,8 +121,17 @@ async function ingest(config: NodeConfig, name: string, rfc5322: Uint8Array): Pr
   });
 }
 
-function localPart(address: string): string {
-  return address.split("@")[0] ?? address;
+/** SMTP `{oe-id}@testnet.crypted.email` maps to registry name `{oe-id}.testnet`. */
+function mailboxName(config: NodeConfig, address: string): string | undefined {
+  const at = address.lastIndexOf("@");
+  const local = (at === -1 ? address : address.slice(0, at)).toLowerCase();
+  const host = (at === -1 ? "" : address.slice(at + 1)).toLowerCase();
+  if (host !== config.domain.toLowerCase()) return undefined;
+  if (config.domain.toLowerCase() === "testnet.crypted.email") {
+    if (local.includes(".")) return undefined;
+    return `${local}.testnet`;
+  }
+  return local;
 }
 
 async function bundleUi(): Promise<string> {

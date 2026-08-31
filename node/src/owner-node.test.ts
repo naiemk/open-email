@@ -22,10 +22,11 @@ import { startNode, type RunningNode } from "./node.ts";
 import { sendSmtp } from "./smtpSend.ts";
 
 const name = "alice.testnet";
-const domain = "crypted.email";
+const oeId = "alice";
+const domain = "testnet.crypted.email";
 const rfc5322 = [
   "From: gmail-user@example.com",
-  `To: ${name}@${domain}`,
+  `To: ${oeId}@${domain}`,
   "Subject: owner-registered receive",
   "",
   "hello after owner registration",
@@ -110,7 +111,7 @@ describe("owner-registered node through receive", () => {
       host: "127.0.0.1",
       port: nodeA.smtpPort,
       from: "gmail-user@example.com",
-      to: `${name}@${domain}`,
+      to: `${oeId}@${domain}`,
       data: rfc5322,
     });
     expect(sent.rcptCode).toBe(250);
