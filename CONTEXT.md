@@ -17,12 +17,16 @@ A registry **name** that contains no `.`, so it cannot collide with ENS.
 _Avoid_: username, handle, subname, open-email ENS
 
 **Linked ENS**:
-An ENS string recorded in the **registry** after the owner proves control. The ENS NFT never moves.
+An ENS string recorded in the **registry** after the ENS holder proves control. The ENS NFT never moves.
 _Avoid_: deposited ENS, custodied ENS, minted .eth
 
 **Registry**:
 The on-chain open-email contract that maps **name** → user (WebAuthn) and records node registration and opt-in/out.
 _Avoid_: ENS registrar, ENS registry (different contracts), user database
+
+**Registry owner**:
+The address allowed to register a **node** on the **registry**. On this testnet it is the same EOA the **relayer** signs with.
+_Avoid_: registry admin, contract admin, owner (ambiguous with ENS holder)
 
 **Node**:
 An email-provider instance: domain, SMTP, its own web app, and a registered server key. The user uses that node's UI; UIs do not talk to other nodes. It may receive and send for a **name** only while that user is **opted in**.
@@ -44,21 +48,29 @@ _Avoid_: symmetric data key, server key
 A per-device key derived from WebAuthn PRF, used only to wrap the **DEK** private half. Never on-chain in plaintext.
 _Avoid_: passkey (the authenticator), password
 
+**Recovery secret**:
+A printable / offline secret that wraps the **DEK**. Lose every device and this secret → the **mailbox** is gone.
+_Avoid_: password, social recovery, seed phrase
+
 **Envelope**:
 Per-message encryption: a one-time key seals the blob (including headers); that key is wrapped to `DEK_public`.
 _Avoid_: E2EE (only true when the sender encrypted to `DEK_public` before any node saw plaintext)
 
 **DAL**:
-Storage plus index: content-addressed blobs (IPFS or similar) and sequential `(name, time, CID)` index nodes.
+Storage plus index: content-addressed blobs (IPFS or similar) and the **index**.
 _Avoid_: gateway database, stateless storage
 
 **Index**:
-The ordered log of `(name, time, CID)` maintained by index nodes. SMTP **nodes** write to it; they do not own it.
-_Avoid_: mailbox SQLite, IMAP store
+The ordered log of `(name, time, CID, size, direction)` plus a per-**name** `total_size`. `direction` is `in` or `out`. SMTP **nodes** write to it; they do not own it. `size` is sealed-envelope bytes.
+_Avoid_: mailbox SQLite, IMAP store, user (the key is **name**)
+
+**Trash**:
+This **node**'s deleted-box UI. Not part of the portable **mailbox**. Emptying it drops live **index** rows and unpins.
+_Avoid_: mailbox folder, IMAP Trash, portable delete
 
 **Reseller**:
-A **node** operator who charges fiat and pays the **registry** / DAL / **relayer** in the background.
-_Avoid_: protocol treasury, Stripe (that's a mechanism)
+A **node** operator who charges the user (fiat or USDC) and pays the **registry** / **DAL** / **relayer** in the background. The user is not paying those contracts.
+_Avoid_: protocol treasury, protocol fee, Stripe or Trustless Commerce invoice (those are mechanisms)
 
 **Pay-to-reach**:
 Priority by on-chain payment: commit a hash, reveal the pre-image in the mail. Unpaid mail that passes SMTP checks still arrives.

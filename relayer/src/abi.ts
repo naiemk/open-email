@@ -83,20 +83,6 @@ export const registryAbi = [
   },
   {
     type: "function",
-    name: "admin",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "setAdmin",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "admin_", type: "address" }],
-    outputs: [],
-  },
-  {
-    type: "function",
     name: "registerNode",
     stateMutability: "nonpayable",
     inputs: [
@@ -187,8 +173,8 @@ export const registryAbi = [
   { type: "error", name: "UnknownName", inputs: [] },
   { type: "error", name: "UnknownNode", inputs: [] },
   { type: "error", name: "ZeroNodeKey", inputs: [] },
-  { type: "error", name: "NotOwner", inputs: [] },
-  { type: "error", name: "NotAdmin", inputs: [] },
+  { type: "error", name: "OwnableUnauthorizedAccount", inputs: [{ name: "account", type: "address" }] },
+  { type: "error", name: "OwnableInvalidOwner", inputs: [{ name: "owner", type: "address" }] },
   { type: "error", name: "EmptyDomain", inputs: [] },
   { type: "error", name: "NodeAlreadyRegistered", inputs: [] },
   { type: "error", name: "DomainTaken", inputs: [] },
