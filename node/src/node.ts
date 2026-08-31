@@ -6,6 +6,7 @@ import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
+import { handleSignup, type SignupConfig } from "./signup.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -19,6 +20,7 @@ export type NodeConfig = {
   index: MailIndex;
   smtpPort?: number;
   httpPort?: number;
+  signup?: SignupConfig;
 };
 
 export type RunningNode = {
@@ -156,6 +158,7 @@ async function handleHttp(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
+    if (config.signup && (await handleSignup(req, url, res, config.signup, config.nodeKey))) return;
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(uiHtml(config.domain));
