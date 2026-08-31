@@ -1,15 +1,16 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { fileURLToPath } from "node:url";
-import * as esbuild from "esbuild";
 import { SMTPServer } from "smtp-server";
 import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
+import { createCredentialWrapStore, type CredentialWrapStore } from "./credential-wraps.ts";
 import { handleSignup, type SignupConfig } from "./signup.ts";
 import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
 import { signDkim } from "./dkim.ts";
+import { createPairStore, handlePair, type PairStore } from "./pair.ts";
+import { serveUiAsset, uiDistExists } from "./ui-static.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -26,6 +27,8 @@ export type NodeConfig = {
   bindHost?: string;
   signup?: SignupConfig;
   send?: SendConfig;
+  dataDir?: string;
+  signupPrice?: string;
 };
 
 export type RunningNode = {
@@ -36,7 +39,9 @@ export type RunningNode = {
 };
 
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
-  const uiJs = await bundleUi();
+  const dataDir = config.dataDir ?? "/data";
+  const credentialWraps = createCredentialWrapStore(`${dataDir}/credential-wraps.json`);
+  const pair = createPairStore();
   const trashByName = new Map<string, Set<number>>();
   const sendHits = createHitWindow();
   const optHits = createHitWindow();
@@ -135,7 +140,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, uiJs, trashByName, takeSendSlot, takeOptSlot);
+    void handleHttp(req, res, config, credentialWraps, pair, trashByName, takeSendSlot, takeOptSlot);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, config.bindHost ?? "127.0.0.1", () => {
@@ -203,31 +208,19 @@ function mailboxName(config: NodeConfig, address: string): string | undefined {
   return local;
 }
 
-async function bundleUi(): Promise<string> {
-  const entry = fileURLToPath(new URL("./ui.ts", import.meta.url));
-  const result = await esbuild.build({
-    entryPoints: [entry],
-    bundle: true,
-    format: "esm",
-    write: false,
-    platform: "browser",
-  });
-  const file = result.outputFiles[0];
-  if (!file) throw new Error("ui bundle empty");
-  return file.text;
-}
-
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
   config: NodeConfig,
-  uiJs: string,
+  credentialWraps: CredentialWrapStore,
+  pair: PairStore,
   trashByName: Map<string, Set<number>>,
   takeSendSlot: (name: string) => boolean,
   takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
+    if (await handlePair(req, url, res, pair, credentialWraps)) return;
     if (
       config.signup &&
       (await handleSignup(req, url, res, config.signup, config.nodeKey, takeOptSlot))
@@ -248,13 +241,13 @@ async function handleHttp(
       return;
     }
     if (req.method === "GET" && url.pathname === "/") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(uiHtml(config.domain));
+      if (serveUiAsset("/", res)) return;
+      json(res, 503, { error: "ui not built — run npm run build:ui" });
       return;
     }
-    if (req.method === "GET" && url.pathname === "/ui.js") {
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
-      res.end(uiJs);
+    if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+      if (serveUiAsset(url.pathname, res)) return;
+      json(res, 404, { error: "not found" });
       return;
     }
     if (req.method === "GET" && url.pathname === "/meta") {
@@ -263,6 +256,8 @@ async function handleHttp(
         nodeKey: config.nodeKey,
         fakeCheckout: Boolean(config.signup?.fakeCheckout),
         turnstileSiteKey: config.signup?.turnstileSiteKey ?? "",
+        signupPrice: config.signupPrice ?? "5.00",
+        uiBuilt: uiDistExists(),
       });
       return;
     }
@@ -344,9 +339,16 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/bootstrap/")) {
       const name = decodeURIComponent(url.pathname.slice("/bootstrap/".length));
-      json(res, 200, await config.registry.nameRecord(name));
+      const credentialId = url.searchParams.get("credentialId") ?? "";
+      const local = credentialId ? credentialWraps.get(credentialId) : undefined;
+      if (local && local.name === name) {
+        json(res, 200, { wrappedDek: local.wrappedDek, source: "node" });
+        return;
+      }
+      json(res, 200, { ...(await config.registry.nameRecord(name)), source: "registry" });
       return;
     }
+    if (serveUiAsset(url.pathname, res)) return;
     json(res, 404, { error: "not found" });
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : "failed" });
@@ -437,65 +439,3 @@ function payHtml(id: string): string {
 </html>`;
 }
 
-function uiHtml(domain: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${domain}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #1c1230; background: #f4f1fb; }
-    button, input, textarea { font: inherit; }
-    #app { min-height: 100vh; }
-    .split { display: grid; grid-template-columns: 200px 280px 1fr; height: 100vh; position: relative; }
-    nav { background: #2b1a4e; color: #eee; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
-    nav h1 { font-size: 16px; margin: 0 0 8px; color: #c4b5fd; }
-    nav button, .folder { text-align: left; background: transparent; color: inherit; border: 0; padding: 8px; border-radius: 8px; cursor: pointer; }
-    .folder.on, nav button.on { background: #6d4aff; }
-    .compose { background: #6d4aff; color: #fff; border: 0; padding: 10px; border-radius: 10px; cursor: pointer; }
-    .meter { margin-top: auto; font-size: 12px; color: #c4b5fd; }
-    .meter i { display: block; height: 6px; background: #6d4aff; border-radius: 4px; margin-top: 4px; max-width: 100%; }
-    .meter.warn i { background: #eab308; }
-    .list { border-right: 1px solid #ddd; overflow: auto; background: #fff; }
-    .search { padding: 8px; }
-    .search input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
-    .row { padding: 10px 12px; border-bottom: 1px solid #eee; cursor: pointer; }
-    .row.on { background: #efe8ff; }
-    .row b { display: block; }
-    .row span { color: #666; font-size: 12px; }
-    .read { padding: 20px 28px; overflow: auto; background: #fff; }
-    .composer { position: absolute; right: 24px; bottom: 24px; width: 420px; background: #fff; border-radius: 12px; box-shadow: 0 12px 40px #0003; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-    .sheet { padding: 32px; max-width: 520px; }
-    .err { color: #b91c1c; }
-    .hint { font-size: 13px; opacity: 0.7; }
-    .id-row { display: flex; align-items: center; gap: 8px; }
-    .id-row input { flex: 1; }
-    .suffix { color: #6d4aff; font-weight: 600; white-space: nowrap; }
-    label { display: block; font-size: 12px; opacity: 0.7; margin-top: 8px; }
-    input[type=text], textarea { width: 100%; padding: 8px; }
-    textarea { min-height: 120px; }
-    .secret { background: #111; color: #fc0; padding: 12px; overflow-wrap: anywhere; }
-  </style>
-</head>
-<body>
-  <div id="app">
-    <div class="sheet">
-      <h1>${domain}</h1>
-      <p>Create a passkey, pick an OE id, pay, save the recovery secret once, then this node opts you in.</p>
-      <label for="oe-id">OE id</label>
-      <div class="id-row">
-        <input id="oe-id" type="text" data-act="oeId" value="" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="alice">
-        <span class="suffix">@${domain}</span>
-      </div>
-      <p class="hint" data-mailbox-preview>you@${domain}</p>
-      <p><button type="button" data-act="create-passkey">Create passkey</button>
-         <button type="button" data-act="unlock">Unlock existing</button></p>
-    </div>
-  </div>
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-  <script type="module" src="/ui.js"></script>
-</body>
-</html>`;
-}

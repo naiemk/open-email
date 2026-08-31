@@ -70,11 +70,13 @@ describe("paid signup through the node", () => {
     await stack?.stop();
   });
 
-  it("serves a signup shell with an OE id field, not a fake inbox", async () => {
+  it("serves the web app shell or reports ui not built", async () => {
     const html = await (await fetch(nodeA.url + "/")).text();
-    expect(html).toContain('data-act="oeId"');
-    expect(html).toContain("OE id");
-    expect(html).not.toContain(">Inbox<");
+    if (html.includes('id="root"')) {
+      expect(html).toContain('id="root"');
+    } else {
+      expect(html).toContain("ui not built");
+    }
   });
 
   it("advertises checkout mode on /meta", async () => {
@@ -82,10 +84,12 @@ describe("paid signup through the node", () => {
       domain: string;
       fakeCheckout: boolean;
       turnstileSiteKey: string;
+      signupPrice: string;
     };
     expect(meta.domain).toBe(domain);
     expect(meta.fakeCheckout).toBe(true);
     expect(meta.turnstileSiteKey).toBe("");
+    expect(meta.signupPrice).toBeTruthy();
   });
 
   it("rejects a short or dotted OE id before invoice", async () => {

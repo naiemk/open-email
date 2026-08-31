@@ -37,6 +37,8 @@ jobs:
 
       - run: npm ci
 
+      - run: npm run build:ui
+
       - run: npm run typecheck
 
       - run: npm run package && git diff --exit-code dist

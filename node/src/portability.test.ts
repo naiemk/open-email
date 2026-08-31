@@ -123,13 +123,14 @@ describe("two-node portable mailbox", () => {
     expect(plaintext).toContain("portable mail");
 
     const pageB = await (await fetch(nodeB.url)).text();
-    expect(pageB).toContain("node-b.test");
+    expect(pageB).toContain('id="root"');
+    const metaB = (await (await fetch(`${nodeB.url}/meta`)).json()) as { domain: string };
+    expect(metaB.domain).toBe("node-b.test");
     expect(pageB).not.toContain(nodeA.url);
     expect(pageB).not.toContain("node-a.test");
-    const uiB = await (await fetch(`${nodeB.url}/ui.js`)).text();
-    expect(uiB).toContain("/index/");
-    expect(uiB).toContain("/blobs/");
-    expect(uiB).not.toContain(nodeA.url);
+    const indexRes = await fetch(`${nodeB.url}/index/alice`);
+    expect(indexRes.status).toBe(200);
+    expect(indexRes.headers.get("content-type")).toContain("application/json");
   });
 
   it("after opt-out of A, new SMTP to A is 550 and B still has the old message", async () => {

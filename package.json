@@ -10,6 +10,7 @@
     "test:relayer": "vitest run relayer",
     "test:l2": "RUN_L2_TESTS=1 vitest run relayer/src/l2.test.ts",
     "typecheck": "tsc --noEmit",
+    "build:ui": "cd node/web && npm install && npm run build",
     "prototype:node-ui": "node node/prototype-ui/serve.mjs",
     "package": "bash package.sh"
   },
@@ -24,10 +25,21 @@
     "viem": "^2.56.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^26.4.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
     "@types/smtp-server": "^3.5.13",
+    "@vitejs/plugin-react": "^5.0.2",
+    "clsx": "^2.1.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.1.11",
     "typescript": "^7.0.2",
     "vibed-infra": "0.13.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "vite": "^7.1.3"
   }
 }

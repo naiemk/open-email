@@ -52,6 +52,8 @@ await startNode({
   smtpPort,
   blobs,
   index,
+  dataDir,
+  signupPrice: process.env.SIGNUP_PRICE ?? "5.00",
   registry: {
     isOptedIn: async (name, key) => {
       const res = await fetch(`${relayerUrl}/opted-in/${encodeURIComponent(name)}/${key}`);

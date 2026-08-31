@@ -1,3 +1,14 @@
+# syntax=docker/dockerfile:1
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY client ./client
+COPY relayer ./relayer
+COPY node ./node
+COPY dal ./dal
+RUN npm run build:ui
+
 FROM node:22-bookworm-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -6,6 +17,7 @@ COPY client ./client
 COPY relayer ./relayer
 COPY node ./node
 COPY dal ./dal
+COPY --from=build /app/node/web/dist ./node/web/dist
 ENV NODE_ENV=production
 EXPOSE 80 25
 CMD ["node", "--experimental-strip-types", "--no-warnings", "node/src/main.ts"]
