@@ -7,7 +7,6 @@ import {
   createPublicClient,
   createWalletClient,
   http,
-  type Address,
   type Hex,
   type PublicClient,
   type WalletClient,
@@ -78,8 +77,6 @@ export type AnvilStack = {
 export type AnvilRegistryMode = {
   testnetMode?: boolean;
   minStemLength?: bigint;
-  /** Registry admin the owner assigns after deploy. `false` leaves admin unset. Default: the registry owner. */
-  admin?: Address | false;
 };
 
 export async function startAnvilStack(mode: AnvilRegistryMode = {}): Promise<AnvilStack> {
@@ -113,18 +110,6 @@ export async function startAnvilStack(mode: AnvilRegistryMode = {}): Promise<Anv
   }
 
   const registry = receipt.contractAddress;
-  if (mode.admin !== false) {
-    const admin = mode.admin ?? account.address;
-    const adminHash = await walletClient.writeContract({
-      address: registry,
-      abi: registryAbi,
-      functionName: "setAdmin",
-      args: [admin],
-      account,
-      chain: foundry,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: adminHash });
-  }
 
   return {
     rpcUrl,
@@ -153,25 +138,13 @@ export async function nameRecordOf(client: RegistryReadClient, name: string): Pr
   }) as Promise<NameRecordTuple>;
 }
 
-export async function setRegistryAdmin(stack: AnvilStack, admin: Address): Promise<void> {
-  const hash = await stack.walletClient.writeContract({
-    address: stack.registry,
-    abi: registryAbi,
-    functionName: "setAdmin",
-    args: [admin],
-    account: stack.walletClient.account!,
-    chain: foundry,
-  });
-  await stack.publicClient.waitForTransactionReceipt({ hash });
-}
-
 export async function approveNode(
   stack: AnvilStack,
   domain: string,
   masterKey: Hex,
-  adminKey: Hex = ANVIL_PRIVATE_KEY,
+  ownerKey: Hex = ANVIL_PRIVATE_KEY,
 ): Promise<void> {
-  const account = privateKeyToAccount(adminKey);
+  const account = privateKeyToAccount(ownerKey);
   const wallet = createWalletClient({
     account,
     chain: foundry,

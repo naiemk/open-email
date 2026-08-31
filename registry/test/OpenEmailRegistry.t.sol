@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol";
 import {OpenEmailRegistry} from "../src/OpenEmailRegistry.sol";
 import {PasskeySigner} from "./PasskeySigner.sol";
@@ -15,16 +16,8 @@ contract OpenEmailRegistryTest is PasskeySigner {
         _initPasskey(1);
     }
 
-    function test_owner_sets_registry_admin() public {
-        address admin = address(0xA11CE);
-        registry.setAdmin(admin);
+    function test_deployer_is_registry_owner() public view {
         assertEq(registry.owner(), address(this));
-        assertEq(registry.admin(), admin);
-
-        vm.prank(address(0xBEEF));
-        vm.expectRevert(OpenEmailRegistry.NotOwner.selector);
-        registry.setAdmin(address(0xBEEF));
-        assertEq(registry.admin(), admin);
     }
 
     function test_register_rejects_dotted_oe_id() public {
@@ -72,21 +65,17 @@ contract OpenEmailRegistryTest is PasskeySigner {
         registry.register("alice", bytes32(qx), bytes32(qy), DEK_PUBLIC, otherWrap, auth);
     }
 
-    function test_admin_approves_node_with_domain_and_master_key() public {
-        address admin = address(0xA11CE);
+    function test_owner_registers_node_with_domain_and_master_key() public {
         bytes32 masterKey = keccak256("node-master");
-        registry.setAdmin(admin);
-
-        vm.prank(admin);
         registry.registerNode("crypted.email", masterKey);
 
         assertEq(registry.nodeOf(masterKey), "crypted.email");
     }
 
-    function test_permissionless_registerNode_no_longer_admits() public {
+    function test_non_owner_cannot_registerNode() public {
         bytes32 masterKey = keccak256("node-master");
         vm.prank(address(0xBEEF));
-        vm.expectRevert(OpenEmailRegistry.NotAdmin.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBEEF)));
         registry.registerNode("evil.test", masterKey);
     }
 
@@ -192,7 +181,6 @@ contract OpenEmailRegistryTest is PasskeySigner {
     }
 
     function _approveNode(string memory domain, bytes32 masterKey) internal {
-        registry.setAdmin(address(this));
         registry.registerNode(domain, masterKey);
     }
 }

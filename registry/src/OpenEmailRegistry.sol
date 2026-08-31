@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol";
 
 /// @title OpenEmailRegistry
 /// @notice Maps a registry name to a WebAuthn controller, DEK public key, and node opt-in.
-contract OpenEmailRegistry {
+contract OpenEmailRegistry is Ownable {
     error DottedName();
     error MissingTestnetSuffix();
     error StemTooShort();
@@ -17,8 +18,6 @@ contract OpenEmailRegistry {
     error UnknownName();
     error UnknownNode();
     error ZeroNodeKey();
-    error NotOwner();
-    error NotAdmin();
     error EmptyDomain();
     error NodeAlreadyRegistered();
     error DomainTaken();
@@ -31,8 +30,6 @@ contract OpenEmailRegistry {
 
     bool public immutable testnetMode;
     uint256 public immutable minStemLength;
-    address public owner;
-    address public admin;
 
     struct NameRecord {
         bytes32 qx;
@@ -54,16 +51,10 @@ contract OpenEmailRegistry {
     mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedInAt)) private _optedInAt;
     mapping(bytes32 nameHash => mapping(bytes32 nodeKey => uint64 optedOutAt)) private _optedOutAt;
 
-    constructor(bool testnetMode_, uint256 minStemLength_) {
+    constructor(bool testnetMode_, uint256 minStemLength_) Ownable(msg.sender) {
         if (minStemLength_ == 0) revert ZeroMinStem();
         testnetMode = testnetMode_;
         minStemLength = minStemLength_;
-        owner = msg.sender;
-    }
-
-    function setAdmin(address admin_) external {
-        if (msg.sender != owner) revert NotOwner();
-        admin = admin_;
     }
 
     function registerChallenge(string calldata name, bytes calldata dekPublic, bytes calldata wrappedDek)
@@ -117,8 +108,7 @@ contract OpenEmailRegistry {
         rec.nonce = 1;
     }
 
-    function registerNode(string calldata domain, bytes32 masterKey) external {
-        if (msg.sender != admin) revert NotAdmin();
+    function registerNode(string calldata domain, bytes32 masterKey) external onlyOwner {
         if (bytes(domain).length == 0) revert EmptyDomain();
         if (masterKey == bytes32(0)) revert ZeroNodeKey();
         if (_nodes[masterKey].exists) revert NodeAlreadyRegistered();

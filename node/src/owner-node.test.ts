@@ -1,21 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hexToBytes, keccak256, toBytes } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { unwrapDek } from "../../client/src/dek.ts";
 import { signWebAuthn } from "../../client/src/passkey.ts";
 import { openEnvelope } from "../../client/src/envelope.ts";
-import { registryAbi } from "../../relayer/src/abi.ts";
 import { createMailIndex } from "../../dal/src/indexLog.ts";
 import { createBlobStore } from "../../dal/src/storage.ts";
 import {
   ANVIL_ACCOUNT_1,
   ANVIL_PRIVATE_KEY,
-  approveNode,
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
   nodeOf,
-  setRegistryAdmin,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -30,23 +26,22 @@ const domain = "crypted.email";
 const rfc5322 = [
   "From: gmail-user@example.com",
   `To: ${name}@${domain}`,
-  "Subject: admin-approved receive",
+  "Subject: owner-approved receive",
   "",
-  "hello after admin approval",
+  "hello after owner registration",
   "",
 ].join("\r\n");
 
-describe("admin-approved node through receive", () => {
+describe("owner-registered node through receive", () => {
   let stack: AnvilStack;
   let relayer: RunningRelayer;
   let nodeA: RunningNode;
   let session: RelayerSession;
   const server = generateNodeServerKey();
-  const admin = privateKeyToAccount(ANVIL_ACCOUNT_1);
 
   beforeAll(async () => {
     ensureRegistryBuilt();
-    stack = await startAnvilStack({ testnetMode: true, admin: false });
+    stack = await startAnvilStack({ testnetMode: true });
     relayer = await startRelayer({
       rpcUrl: stack.rpcUrl,
       registry: stack.registry,
@@ -60,29 +55,34 @@ describe("admin-approved node through receive", () => {
     await stack?.stop();
   });
 
-  it("rejects node registration until the owner assigns an admin who approves domain + master key", async () => {
-    const denied = await fetch(`${relayer.url}/nodes`, {
+  it("rejects registerNode from a relayer that is not the registry owner", async () => {
+    const stranger = await startRelayer({
+      rpcUrl: stack.rpcUrl,
+      registry: stack.registry,
+      privateKey: ANVIL_ACCOUNT_1,
+    });
+    try {
+      const denied = await fetch(`${stranger.url}/nodes`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ domain, masterKey: server.nodeKey }),
+      });
+      expect(denied.status).toBe(400);
+      expect(await denied.json()).toEqual({ error: "OwnableUnauthorizedAccount" });
+    } finally {
+      await stranger.close();
+    }
+  });
+
+  it("lets the owner relayer register the node, then opts in and decrypts SMTP", async () => {
+    const approved = await fetch(`${relayer.url}/nodes`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ domain, masterKey: server.nodeKey }),
     });
-    expect(denied.status).toBe(400);
-    expect(await denied.json()).toEqual({ error: "NotAdmin" });
-
-    await setRegistryAdmin(stack, admin.address);
-    expect(
-      await stack.publicClient.readContract({
-        address: stack.registry,
-        abi: registryAbi,
-        functionName: "admin",
-      }),
-    ).toBe(admin.address);
-
-    await approveNode(stack, domain, server.nodeKey, ANVIL_ACCOUNT_1);
+    expect(approved.status).toBe(200);
     expect(await nodeOf(stack, server.nodeKey)).toBe(domain);
-  });
 
-  it("opts in via the relayer, accepts SMTP, and decrypts on that node", async () => {
     session = await registerViaRelayer(relayer.url, name);
     await optInViaRelayer(session, name, server.nodeKey);
     expect(await isOptedIn(stack, name, server.nodeKey)).toBe(true);
@@ -127,8 +127,8 @@ describe("admin-approved node through receive", () => {
     const blob = new Uint8Array(await (await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).arrayBuffer());
     const dekPrivate = unwrapDek(hexToBytes(session.wrappedDek), session.kek);
     const plaintext = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
-    expect(plaintext).toContain("Subject: admin-approved receive");
-    expect(plaintext).toContain("hello after admin approval");
+    expect(plaintext).toContain("Subject: owner-approved receive");
+    expect(plaintext).toContain("hello after owner registration");
 
     const home = await (await fetch(nodeA.url)).text();
     expect(home).toContain(domain);

@@ -1,7 +1,6 @@
 import { concatHex, createPublicClient, createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
-import { registryAbi } from "./abi.ts";
 import { ensureRegistryBuilt, loadRegistryArtifact } from "./anvil.ts";
 import { loadDotenv } from "./env.ts";
 
@@ -74,16 +73,6 @@ export async function deployRegistryOnL2(env: L2RelayerEnv) {
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
   if (!receipt.contractAddress) throw new Error("L2 registry deploy produced no address");
-
-  const adminHash = await walletClient.writeContract({
-    address: receipt.contractAddress,
-    abi: registryAbi,
-    functionName: "setAdmin",
-    args: [account.address],
-    account,
-    chain: l2Chain,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: adminHash, timeout: 120_000 });
 
   return { registry: receipt.contractAddress, publicClient, accountAddress: account.address };
 }

@@ -82,7 +82,7 @@ describe.skipIf(!env)("Sepolia first-receive seam", { timeout: 180_000 }, () => 
     await relayer?.close();
   });
 
-  it("registers {oe-id}.testnet, opts into an admin-approved node, and decrypts SMTP on that node", async () => {
+  it("registers {oe-id}.testnet, opts into an owner-registered node, and decrypts SMTP on that node", async () => {
     expect(await p256verifyIsNative(publicClient)).toBe(true);
     expect(await isOptedIn({ publicClient, registry }, name, nodeMaster.nodeKey)).toBe(true);
 
