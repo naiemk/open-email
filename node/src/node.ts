@@ -486,7 +486,7 @@ function uiHtml(domain: string): string {
       <p>Create a passkey, pick an OE id, pay, save the recovery secret once, then this node opts you in.</p>
       <label for="oe-id">OE id</label>
       <div class="id-row">
-        <input id="oe-id" type="text" data-act="oeId" value="" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="alice">
+        <input id="oe-id" type="text" data-act="oeId" value="" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="alice">
         <span class="suffix">@${domain}</span>
       </div>
       <p class="hint" data-mailbox-preview>you@${domain}</p>
