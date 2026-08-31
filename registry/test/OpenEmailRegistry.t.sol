@@ -72,11 +72,18 @@ contract OpenEmailRegistryTest is PasskeySigner {
         assertEq(registry.nodeOf(masterKey), "crypted.email");
     }
 
-    function test_non_owner_cannot_registerNode() public {
+    function test_transferred_registry_owner_can_registerNode() public {
+        address nextOwner = address(0xB0B);
+        registry.transferOwnership(nextOwner);
         bytes32 masterKey = keccak256("node-master");
-        vm.prank(address(0xBEEF));
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBEEF)));
-        registry.registerNode("evil.test", masterKey);
+
+        vm.prank(nextOwner);
+        registry.registerNode("crypted.email", masterKey);
+        assertEq(registry.owner(), nextOwner);
+        assertEq(registry.nodeOf(masterKey), "crypted.email");
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        registry.registerNode("other.test", keccak256("other"));
     }
 
     function test_opt_in_to_unapproved_node_fails() public {
@@ -91,7 +98,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     function test_opt_in_records_node_for_name() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        _approveNode("node-a.test", nodeKey);
+        _registerNode("node-a.test", nodeKey);
 
         bytes memory challenge = registry.optInChallenge("alice", nodeKey);
         registry.optIn("alice", nodeKey, _sign(challenge));
@@ -102,7 +109,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     function test_relayer_cannot_forge_opt_in() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        _approveNode("node-a.test", nodeKey);
+        _registerNode("node-a.test", nodeKey);
 
         WebAuthn.WebAuthnAuth memory empty;
         vm.prank(address(0xBEEF));
@@ -116,7 +123,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
         address nodeOperator = address(0xA11CE);
-        _approveNode("node-a.test", nodeKey);
+        _registerNode("node-a.test", nodeKey);
 
         WebAuthn.WebAuthnAuth memory empty;
         vm.prank(nodeOperator);
@@ -129,7 +136,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
     function test_opt_out_ends_authorization_with_timestamp() public {
         _registerAlice();
         bytes32 nodeKey = keccak256("node-a");
-        _approveNode("node-a.test", nodeKey);
+        _registerNode("node-a.test", nodeKey);
         registry.optIn("alice", nodeKey, _sign(registry.optInChallenge("alice", nodeKey)));
         assertTrue(registry.isOptedIn("alice", nodeKey));
 
@@ -180,7 +187,7 @@ contract OpenEmailRegistryTest is PasskeySigner {
         registry.register("alice", bytes32(qx), bytes32(qy), DEK_PUBLIC, WRAPPED_DEK, _sign(challenge));
     }
 
-    function _approveNode(string memory domain, bytes32 masterKey) internal {
+    function _registerNode(string memory domain, bytes32 masterKey) internal {
         registry.registerNode(domain, masterKey);
     }
 }

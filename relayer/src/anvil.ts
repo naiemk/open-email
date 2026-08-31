@@ -138,29 +138,6 @@ export async function nameRecordOf(client: RegistryReadClient, name: string): Pr
   }) as Promise<NameRecordTuple>;
 }
 
-export async function approveNode(
-  stack: AnvilStack,
-  domain: string,
-  masterKey: Hex,
-  ownerKey: Hex = ANVIL_PRIVATE_KEY,
-): Promise<void> {
-  const account = privateKeyToAccount(ownerKey);
-  const wallet = createWalletClient({
-    account,
-    chain: foundry,
-    transport: http(stack.rpcUrl),
-  });
-  const hash = await wallet.writeContract({
-    address: stack.registry,
-    abi: registryAbi,
-    functionName: "registerNode",
-    args: [domain, masterKey],
-    account,
-    chain: foundry,
-  });
-  await stack.publicClient.waitForTransactionReceipt({ hash });
-}
-
 export async function nodeOf(client: RegistryReadClient, masterKey: Hex): Promise<string> {
   return client.publicClient.readContract({
     address: client.registry,

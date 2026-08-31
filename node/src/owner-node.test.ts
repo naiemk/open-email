@@ -26,7 +26,7 @@ const domain = "crypted.email";
 const rfc5322 = [
   "From: gmail-user@example.com",
   `To: ${name}@${domain}`,
-  "Subject: owner-approved receive",
+  "Subject: owner-registered receive",
   "",
   "hello after owner registration",
   "",
@@ -75,12 +75,12 @@ describe("owner-registered node through receive", () => {
   });
 
   it("lets the owner relayer register the node, then opts in and decrypts SMTP", async () => {
-    const approved = await fetch(`${relayer.url}/nodes`, {
+    const registered = await fetch(`${relayer.url}/nodes`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ domain, masterKey: server.nodeKey }),
     });
-    expect(approved.status).toBe(200);
+    expect(registered.status).toBe(200);
     expect(await nodeOf(stack, server.nodeKey)).toBe(domain);
 
     session = await registerViaRelayer(relayer.url, name);
@@ -127,7 +127,7 @@ describe("owner-registered node through receive", () => {
     const blob = new Uint8Array(await (await fetch(`${nodeA.url}/blobs/${rows[0]!.cid}`)).arrayBuffer());
     const dekPrivate = unwrapDek(hexToBytes(session.wrappedDek), session.kek);
     const plaintext = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
-    expect(plaintext).toContain("Subject: owner-approved receive");
+    expect(plaintext).toContain("Subject: owner-registered receive");
     expect(plaintext).toContain("hello after owner registration");
 
     const home = await (await fetch(nodeA.url)).text();
