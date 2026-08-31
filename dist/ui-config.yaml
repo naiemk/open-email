@@ -1,0 +1,2 @@
+image: ghcr.io/naiemk/open-email-ui:main
+port: 80

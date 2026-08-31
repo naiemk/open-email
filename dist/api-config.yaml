@@ -1,0 +1,4 @@
+image: ghcr.io/naiemk/open-email-api:main
+port: 8080
+config:
+  role: relayer

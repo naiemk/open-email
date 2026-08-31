@@ -39,6 +39,8 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm run package && git diff --exit-code dist
+
       - run: npm test
         env:
           RUN_L2_TESTS: ""

@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, type Hex } from "viem";
 
@@ -55,10 +57,24 @@ export function signIndexWrite(
 export function createMailIndex(opts: {
   isOptedIn: (name: string, nodeKey: Hex) => Promise<boolean>;
   cap?: number;
+  persistPath?: string;
 }): MailIndex {
   const cap = opts.cap ?? STORAGE_CAP;
   const entries: IndexEntry[] = [];
   let nextSeq = 1;
+  if (opts.persistPath && existsSync(opts.persistPath)) {
+    const snap = JSON.parse(readFileSync(opts.persistPath, "utf8")) as {
+      entries: IndexEntry[];
+      nextSeq: number;
+    };
+    entries.push(...(snap.entries ?? []));
+    nextSeq = snap.nextSeq ?? entries.length + 1;
+  }
+  const save = () => {
+    if (!opts.persistPath) return;
+    mkdirSync(dirname(opts.persistPath), { recursive: true });
+    writeFileSync(opts.persistPath, JSON.stringify({ entries, nextSeq }));
+  };
   return {
     cap,
     async append(write) {
@@ -81,6 +97,7 @@ export function createMailIndex(opts: {
         nodeKey: write.nodeKey,
       };
       entries.push(entry);
+      save();
       return entry;
     },
     list(name) {
@@ -102,6 +119,7 @@ export function createMailIndex(opts: {
       for (let i = entries.length - 1; i >= 0; i--) {
         if (entries[i]!.name === name && drop.has(entries[i]!.seq)) entries.splice(i, 1);
       }
+      save();
       return cids;
     },
   };

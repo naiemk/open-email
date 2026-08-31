@@ -1,0 +1,42 @@
+name: open-email
+version: 1
+
+templates:
+  api: api-config.yaml
+  ui: ui-config.yaml
+  nodes: nodes-config.yaml
+
+network:
+  edge: vps-edge
+
+autoUpdate:
+  api:
+    enabled: false
+    intervalMin: 30
+    offset: 0
+  ui:
+    enabled: false
+    intervalMin: 20
+    offset: 15
+  nodes:
+    enabled: false
+    intervalMin: 30
+    offset: 10
+  gateway:
+    enabled: false
+    intervalMin: 20
+    offset: 20
+
+gateway:
+  publicIp: 57.131.150.182
+  tlsEmail: naiemk@gmail.com
+  nginxImage: nginx:alpine
+  sites:
+    - host: testnet.crypted.email
+      backend: open-email-ui
+      backendPort: 80
+      ui: open-email-ui
+      uiPort: 80
+      healthPath: /meta
+      createPath: /signup/invoice
+      tlsCertDir: ./certs

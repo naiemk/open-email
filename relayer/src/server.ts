@@ -18,6 +18,7 @@ export type RelayerConfig = {
   registry: Hex;
   privateKey: Hex;
   port?: number;
+  bindHost?: string;
   chain?: Chain;
 };
 
@@ -62,7 +63,7 @@ export async function startRelayer(config: RelayerConfig): Promise<RunningRelaye
   });
 
   await new Promise<void>((resolve) => {
-    server.listen(config.port ?? 0, "127.0.0.1", () => resolve());
+    server.listen(config.port ?? 0, config.bindHost ?? "127.0.0.1", () => resolve());
   });
   const addr = server.address();
   if (!addr || typeof addr === "string") {
@@ -87,7 +88,11 @@ async function handle(
   },
 ): Promise<void> {
   try {
-    const url = new URL(req.url ?? "/", "http://relayer.local");
+    const raw = req.url ?? "/";
+    const url = new URL(raw.startsWith("/api/") ? raw.slice(4) : raw, "http://relayer.local");
+    if (req.method === "GET" && url.pathname === "/health") {
+      return json(res, 200, { ok: true, service: "relayer" });
+    }
     if (req.method === "GET" && url.pathname === "/register-challenge") {
       const name = url.searchParams.get("name") ?? "";
       const dekPublic = url.searchParams.get("dekPublic") as Hex;
