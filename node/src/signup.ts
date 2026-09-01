@@ -277,18 +277,26 @@ export async function handleSignup(
       return true;
     }
     const registryName = `${invoice.oeId}.testnet`;
-    const registered = await fetch(`${signup.relayerUrl}/register`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: registryName,
-        qx: body.qx,
-        qy: body.qy,
-        dekPublic: body.dekPublic,
-        wrappedDek: body.wrappedDek,
-        auth: body.auth,
-      }),
-    });
+    let registered: Response;
+    try {
+      registered = await fetch(`${signup.relayerUrl}/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: registryName,
+          qx: body.qx,
+          qy: body.qy,
+          dekPublic: body.dekPublic,
+          wrappedDek: body.wrappedDek,
+          auth: body.auth,
+        }),
+      });
+    } catch (err) {
+      json(res, 502, {
+        error: `relayer unreachable (${signup.relayerUrl}): ${err instanceof Error ? err.message : "fetch failed"}`,
+      });
+      return true;
+    }
     if (!registered.ok) {
       json(res, registered.status, await registered.json().catch(() => ({ error: "register failed" })));
       return true;

@@ -18,6 +18,7 @@ export function p256CoordsFromPublicKey(spki: Uint8Array, attestationObject?: Ui
 export function webAuthnUserError(err: unknown): string {
   const name = err instanceof Error ? err.name : "";
   const message = err instanceof Error ? err.message : String(err);
+  if (name === "AbortError") return "Passkey cancelled.";
   if (name === "InvalidStateError" || /already pending/i.test(message)) {
     return "A passkey prompt is already open. Finish or cancel it, then try again.";
   }

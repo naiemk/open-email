@@ -3,6 +3,7 @@ import type { Hex } from "viem";
 import { bytesToHex, hexToBytes } from "viem";
 import {
   assertWebAuthn,
+  abortPasskeyCeremony,
   connectPasskey,
   createPasskey,
   encodeRecovery,
@@ -29,6 +30,8 @@ import {
   registerPaid,
   type Meta,
 } from "@/lib/api";
+import { relayerHint } from "@/lib/api-fetch";
+import { passkeyLog, passkeyLogError } from "@/lib/passkey-log";
 import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
@@ -77,6 +80,7 @@ export default function App() {
   const [pairScanOpen, setPairScanOpen] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -147,38 +151,51 @@ export default function App() {
     return turnstileToken;
   };
 
-  const run = useCallback(async (fn: () => Promise<void>) => {
-    if (busy) return;
+  const run = useCallback(async (label: string, fn: () => Promise<void>) => {
+    if (busyRef.current) {
+      passkeyLog("run:blocked", { label, reason: "busyRef" });
+      return;
+    }
+    passkeyLog("run:start", { label });
+    busyRef.current = true;
     setBusy(true);
     setError("");
     try {
       await fn();
+      passkeyLog("run:ok", { label });
     } catch (e) {
-      setError(webAuthnUserError(e));
+      passkeyLogError("run:error", e, { label });
+      setError(relayerHint(webAuthnUserError(e)));
     } finally {
+      busyRef.current = false;
       setBusy(false);
+      passkeyLog("run:done", { label });
     }
-  }, [busy]);
+  }, []);
 
   const signIn = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
     if (!meta) return;
     const name = registryName(oeId, meta.domain);
+    passkeyLog("signIn:start", { oeId, credentialId: credentialId.slice(0, 18), name });
     try {
+      passkeyLog("signIn:bootstrap-fetch", { name });
       const boot = await bootstrap(name, credentialId);
       const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
       const in_ = await optedIn(name, meta.nodeKey);
       setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
       clearSignupDraft(credentialId);
       setPhase("inbox");
+      passkeyLog("signIn:registered-inbox", { oeId });
       return;
     } catch {
-      /* not registered — try unpaid signup */
+      passkeyLog("signIn:not-registered-resume", { oeId });
     }
     await resumeUnpaidSignup(credentialId, oeId, kek);
   };
 
   const resumeUnpaidSignup = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
     if (!meta) return;
+    passkeyLog("resumeUnpaidSignup:start", { oeId, credentialId: credentialId.slice(0, 18) });
     const local = loadSignupDraft(credentialId);
     const stored = findPasskey(credentialId);
     let qx = local?.qx ?? stored?.qx;
@@ -188,6 +205,7 @@ export default function App() {
     // Orphan passkey (pre-draft era): coords were never persisted, so this credential
     // can never call register. Mint a fresh passkey for the same OE id and continue.
     if ((!qx || !qy) && !(remote?.qx && remote?.qy)) {
+      passkeyLog("resumeUnpaidSignup:orphan-mint-passkey", { oeId });
       const mat = await createPasskey(oeId, meta.domain);
       removePasskey(credentialId);
       rememberPasskey({
@@ -218,6 +236,7 @@ export default function App() {
       setSignup(next);
       saveSignupDraft(next);
       setPhase("paying");
+      passkeyLog("resumeUnpaidSignup:paying-after-mint", { oeId, invoiceId: invoice.id });
       return;
     }
 
@@ -264,10 +283,11 @@ export default function App() {
     setSignup(next);
     saveSignupDraft(next);
     setPhase("paying");
+    passkeyLog("resumeUnpaidSignup:paying", { oeId, invoiceId: remote.id, status: remote.status });
   };
 
   const onSignUp = (oeId: string) =>
-    run(async () => {
+    run("onSignUp", async () => {
       if (!meta) return;
       if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters with no dots");
       const mat = await createPasskey(oeId, meta.domain);
@@ -310,7 +330,7 @@ export default function App() {
     });
 
   const onConnect = () =>
-    run(async () => {
+    run("onConnect", async () => {
       if (!meta) return;
       const { credentialId, kek } = await connectPasskey();
       touchPasskey(credentialId);
@@ -321,7 +341,7 @@ export default function App() {
     });
 
   const onConnectStored = (credentialId: string, oeId: string) =>
-    run(async () => {
+    run("onConnectStored", async () => {
       if (!meta) return;
       const cid = credentialId as Hex;
       const { credentialId: got, kek } = await connectPasskey(cid);
@@ -330,7 +350,7 @@ export default function App() {
     });
 
   const onDemoSignIn = () =>
-    run(async () => {
+    run("onDemoSignIn", async () => {
       if (!meta?.mockPasskey) return;
       const cfg = await fetchMockConfig();
       if (!cfg) throw new Error("Demo account not configured on this node");
@@ -352,14 +372,32 @@ export default function App() {
     });
 
   const onPaidRegister = () =>
-    run(async () => {
-      if (!signup || !meta) return;
+    run("onPaidRegister", async () => {
+      if (!signup || !meta) {
+        passkeyLog("onPaidRegister:skip", { reason: !signup ? "no-signup" : "no-meta" });
+        return;
+      }
+      passkeyLog("onPaidRegister:start", {
+        oeId: signup.oeId,
+        credentialId: signup.credentialId.slice(0, 18),
+        invoiceId: signup.invoiceId,
+        status: signup.status,
+      });
+      passkeyLog("onPaidRegister:generate-dek");
       const dek = generateDek();
       const wrappedDek = bytesToHex(wrapDek(dek.privateKey, signup.kek));
       const dekPublic = bytesToHex(dek.publicKey);
       const name = registryName(signup.oeId, meta.domain);
+      passkeyLog("onPaidRegister:register-challenge-fetch", { name });
       const challenge = await registerChallenge(name, dekPublic, wrappedDek);
+      passkeyLog("onPaidRegister:register-challenge-ok", { challengeLen: challenge.length });
+      passkeyLog("onPaidRegister:clear-ceremony-before-assert");
+      abortPasskeyCeremony();
+      await new Promise((r) => setTimeout(r, 200));
+      passkeyLog("onPaidRegister:assert-webauthn-start", { credentialId: signup.credentialId.slice(0, 18) });
       const auth = await assertWebAuthn(challenge, signup.credentialId);
+      passkeyLog("onPaidRegister:assert-webauthn-ok");
+      passkeyLog("onPaidRegister:register-paid-post");
       await registerPaid({
         invoiceId: signup.invoiceId,
         credentialId: signup.credentialId,
@@ -380,13 +418,19 @@ export default function App() {
         optedIn: false,
       });
       setPhase("recovery");
+      passkeyLog("onPaidRegister:recovery-phase");
     });
 
   const onRecoverySaved = () =>
-    run(async () => {
+    run("onRecoverySaved", async () => {
       if (!signup || !meta || !pendingSession) return;
+      passkeyLog("onRecoverySaved:start", { oeId: signup.oeId });
       const challenge = await optInChallenge(registryName(signup.oeId, meta.domain), meta.nodeKey);
+      passkeyLog("onRecoverySaved:assert-webauthn-start");
+      abortPasskeyCeremony();
+      await new Promise((r) => setTimeout(r, 200));
       const auth = await assertWebAuthn(challenge, signup.credentialId);
+      passkeyLog("onRecoverySaved:assert-webauthn-ok");
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });
       setSession({ ...pendingSession, optedIn: true });
       setPendingSession(null);
@@ -397,6 +441,8 @@ export default function App() {
     });
 
   const logout = () => {
+    passkeyLog("logout");
+    abortPasskeyCeremony();
     setSession(null);
     setPendingSession(null);
     setSignup(null);

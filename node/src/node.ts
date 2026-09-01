@@ -411,12 +411,18 @@ async function proxyRelayer(
     }
     init.body = new Uint8Array(body);
   }
-  const proxied = await fetch(`${relayerUrl}${path}${url.search}`, init);
-  const buf = Buffer.from(await proxied.arrayBuffer());
-  res.writeHead(proxied.status, {
-    "content-type": proxied.headers.get("content-type") ?? "application/json",
-  });
-  res.end(buf);
+  try {
+    const proxied = await fetch(`${relayerUrl}${path}${url.search}`, init);
+    const buf = Buffer.from(await proxied.arrayBuffer());
+    res.writeHead(proxied.status, {
+      "content-type": proxied.headers.get("content-type") ?? "application/json",
+    });
+    res.end(buf);
+  } catch (err) {
+    json(res, 502, {
+      error: `relayer unreachable (${relayerUrl}): ${err instanceof Error ? err.message : "fetch failed"}`,
+    });
+  }
 }
 
 function nameFromJson(body: Buffer): string {

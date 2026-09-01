@@ -2,11 +2,18 @@ import { bytesToHex, hexToBytes, type Hex } from "viem";
 import { generateDek, unwrapDek, wrapDek } from "@client/dek.ts";
 import { openEnvelope, sealEnvelope } from "@client/envelope.ts";
 import { p256CoordsFromPublicKey, webAuthnUserError } from "@client/webauthn-p256.ts";
+import { passkeyLog, passkeyLogError } from "@/lib/passkey-log";
 import * as mock from "@/lib/webauthn-mock";
 
 export { webAuthnUserError, generateDek, unwrapDek, wrapDek, openEnvelope, sealEnvelope };
 
 let mockMode = false;
+
+/** Only one WebAuthn create/get at a time — browsers throw InvalidStateError otherwise. */
+let ceremonyAbort: AbortController | null = null;
+let ceremonyQueue: Promise<unknown> = Promise.resolve();
+let ceremonySerial = 0;
+let ceremonyQueueDepth = 0;
 
 export function setMockPasskeyMode(on: boolean): void {
   mockMode = on || new URLSearchParams(location.search).has("mock");
@@ -14,6 +21,14 @@ export function setMockPasskeyMode(on: boolean): void {
 
 export function isMockPasskeyMode(): boolean {
   return mockMode;
+}
+
+/** Cancel any in-flight passkey sheet (safe no-op if none). */
+export function abortPasskeyCeremony(): void {
+  const had = !!ceremonyAbort;
+  passkeyLog("abortPasskeyCeremony", { hadPending: had });
+  ceremonyAbort?.abort();
+  ceremonyAbort = null;
 }
 
 const PRF_SALT = new Uint8Array(32);
@@ -40,50 +55,67 @@ export function isValidOeId(oeId: string): boolean {
 
 export async function createPasskey(oeId: string, domain: string): Promise<PasskeyMaterial> {
   if (mockMode) return mock.mockCreatePasskey(oeId, domain);
-  const userId = crypto.getRandomValues(new Uint8Array(16));
-  const cred = (await navigator.credentials.create({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: domain, id: location.hostname },
-      user: { id: userId, name: oeId, displayName: oeId },
-      pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-      authenticatorSelection: { residentKey: "required", userVerification: "required" },
-      extensions: { prf: { eval: { first: PRF_SALT } } },
-    },
-  })) as PublicKeyCredential | null;
-  if (!cred) throw new Error("Passkey was not created");
-  const att = cred.response as AuthenticatorAttestationResponse;
-  let spki = new Uint8Array(0);
-  try {
-    spki = new Uint8Array(att.getPublicKey?.() ?? new ArrayBuffer(0));
-  } catch {
-    /* Safari may omit getPublicKey */
-  }
-  const { qx, qy } = p256CoordsFromPublicKey(spki, new Uint8Array(att.attestationObject));
-  const kek = prfFrom(cred);
-  return { credentialId: bytesToHex(new Uint8Array(cred.rawId)), qx, qy, kek };
+  return withCeremony("createPasskey", async (signal) => {
+    passkeyLog("createPasskey:navigator.credentials.create", { oeId, domain, rpId: location.hostname });
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const cred = (await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: domain, id: location.hostname },
+        user: { id: userId, name: oeId, displayName: oeId },
+        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        extensions: { prf: { eval: { first: PRF_SALT } } },
+      },
+      signal,
+    })) as PublicKeyCredential | null;
+    passkeyLog("createPasskey:navigator.credentials.create returned", { hasCred: !!cred });
+    if (!cred) throw new Error("Passkey was not created");
+    const att = cred.response as AuthenticatorAttestationResponse;
+    let spki = new Uint8Array(0);
+    try {
+      spki = new Uint8Array(att.getPublicKey?.() ?? new ArrayBuffer(0));
+    } catch {
+      /* Safari may omit getPublicKey */
+    }
+    const { qx, qy } = p256CoordsFromPublicKey(spki, new Uint8Array(att.attestationObject));
+    const kek = prfFrom(cred);
+    const credentialId = bytesToHex(new Uint8Array(cred.rawId));
+    passkeyLog("createPasskey:done", { credentialId: credentialId.slice(0, 18) });
+    return { credentialId, qx, qy, kek };
+  });
 }
 
 export async function connectPasskey(forCredentialId?: Hex): Promise<{ credentialId: Hex; kek: Uint8Array }> {
   if (mockMode) return mock.mockConnectPasskey(forCredentialId);
-  const allowCredentials = forCredentialId
-    ? [{ id: toBufferSource(hexToBytes(forCredentialId)), type: "public-key" as const }]
-    : undefined;
-  const cred = (await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
+  return withCeremony("connectPasskey", async (signal) => {
+    passkeyLog("connectPasskey:navigator.credentials.get", {
+      forCredentialId: forCredentialId?.slice(0, 18),
       rpId: location.hostname,
-      userVerification: "required",
-      allowCredentials,
-      extensions: { prf: { eval: { first: PRF_SALT } } },
-    },
-  })) as PublicKeyCredential | null;
-  if (!cred) throw new Error("Passkey cancelled");
-  const credentialId = bytesToHex(new Uint8Array(cred.rawId));
-  if (forCredentialId && credentialId.toLowerCase() !== forCredentialId.toLowerCase()) {
-    throw new Error("Wrong passkey selected");
-  }
-  return { credentialId, kek: prfFrom(cred) };
+      hasAllowCredentials: !!forCredentialId,
+    });
+    const allowCredentials = forCredentialId
+      ? [{ id: toBufferSource(hexToBytes(forCredentialId)), type: "public-key" as const }]
+      : undefined;
+    const cred = (await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rpId: location.hostname,
+        userVerification: "required",
+        allowCredentials,
+        extensions: { prf: { eval: { first: PRF_SALT } } },
+      },
+      signal,
+    })) as PublicKeyCredential | null;
+    passkeyLog("connectPasskey:navigator.credentials.get returned", { hasCred: !!cred });
+    if (!cred) throw new Error("Passkey cancelled");
+    const credentialId = bytesToHex(new Uint8Array(cred.rawId));
+    if (forCredentialId && credentialId.toLowerCase() !== forCredentialId.toLowerCase()) {
+      throw new Error("Wrong passkey selected");
+    }
+    passkeyLog("connectPasskey:done", { credentialId: credentialId.slice(0, 18) });
+    return { credentialId, kek: prfFrom(cred) };
+  });
 }
 
 export async function assertWebAuthn(
@@ -98,29 +130,40 @@ export async function assertWebAuthn(
   clientDataJSON: string;
 }> {
   if (mockMode) return mock.mockAssertWebAuthn(challenge, credentialId);
-  const allowCredentials = credentialId
-    ? [{ id: toBufferSource(hexToBytes(credentialId)), type: "public-key" as const }]
-    : undefined;
-  const cred = (await navigator.credentials.get({
-    publicKey: {
-      challenge: toBufferSource(hexToBytes(challenge)),
+  return withCeremony("assertWebAuthn", async (signal) => {
+    passkeyLog("assertWebAuthn:navigator.credentials.get", {
+      credentialId: credentialId?.slice(0, 18),
+      challengeLen: challenge.length,
       rpId: location.hostname,
-      userVerification: "required",
-      allowCredentials,
-    },
-  })) as PublicKeyCredential | null;
-  if (!cred) throw new Error("Passkey assertion cancelled");
-  const assertion = cred.response as AuthenticatorAssertionResponse;
-  const clientDataJSON = new TextDecoder().decode(assertion.clientDataJSON);
-  const { r, s } = parseEcdsaDer(new Uint8Array(assertion.signature));
-  return {
-    r: bytesToHex(r),
-    s: bytesToHex(s),
-    challengeIndex: clientDataJSON.indexOf('"challenge"'),
-    typeIndex: clientDataJSON.indexOf('"type"'),
-    authenticatorData: bytesToHex(new Uint8Array(assertion.authenticatorData)),
-    clientDataJSON,
-  };
+      signalAborted: signal.aborted,
+    });
+    const allowCredentials = credentialId
+      ? [{ id: toBufferSource(hexToBytes(credentialId)), type: "public-key" as const }]
+      : undefined;
+    const cred = (await navigator.credentials.get({
+      publicKey: {
+        challenge: toBufferSource(hexToBytes(challenge)),
+        rpId: location.hostname,
+        userVerification: "required",
+        allowCredentials,
+      },
+      signal,
+    })) as PublicKeyCredential | null;
+    passkeyLog("assertWebAuthn:navigator.credentials.get returned", { hasCred: !!cred });
+    if (!cred) throw new Error("Passkey assertion cancelled");
+    const assertion = cred.response as AuthenticatorAssertionResponse;
+    const clientDataJSON = new TextDecoder().decode(assertion.clientDataJSON);
+    const { r, s } = parseEcdsaDer(new Uint8Array(assertion.signature));
+    passkeyLog("assertWebAuthn:done", { credentialId: bytesToHex(new Uint8Array(cred.rawId)).slice(0, 18) });
+    return {
+      r: bytesToHex(r),
+      s: bytesToHex(s),
+      challengeIndex: clientDataJSON.indexOf('"challenge"'),
+      typeIndex: clientDataJSON.indexOf('"type"'),
+      authenticatorData: bytesToHex(new Uint8Array(assertion.authenticatorData)),
+      clientDataJSON,
+    };
+  });
 }
 
 export function encodeRecovery(kek: Uint8Array, wrap: Uint8Array): string {
@@ -137,6 +180,71 @@ export function encodeRecovery(kek: Uint8Array, wrap: Uint8Array): string {
 export function generateTransportKeypair(): { publicKey: Uint8Array; privateKey: Uint8Array } {
   const dek = generateDek();
   return { publicKey: dek.publicKey, privateKey: dek.privateKey };
+}
+
+async function withCeremony<T>(label: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const cid = ++ceremonySerial;
+  ceremonyQueueDepth += 1;
+  passkeyLog("withCeremony:queued", { cid, label, queueDepth: ceremonyQueueDepth });
+
+  const run = async (): Promise<T> => {
+    passkeyLog("withCeremony:enter", { cid, label, hadAbortController: !!ceremonyAbort });
+    if (ceremonyAbort) {
+      passkeyLog("withCeremony:abort-stale", { cid, label });
+      ceremonyAbort.abort();
+      ceremonyAbort = null;
+      await wait(100);
+    }
+
+    const ac = new AbortController();
+    ceremonyAbort = ac;
+    passkeyLog("withCeremony:calling-fn", { cid, label });
+    try {
+      const result = await fn(ac.signal);
+      passkeyLog("withCeremony:fn-ok", { cid, label });
+      return result;
+    } catch (err) {
+      passkeyLogError("withCeremony:fn-error", err, { cid, label, signalAborted: ac.signal.aborted });
+      if (isPendingCeremonyError(err) && !ac.signal.aborted) {
+        passkeyLog("withCeremony:pending-retry", { cid, label, waitMs: 500 });
+        abortPasskeyCeremony();
+        await wait(500);
+        const retry = new AbortController();
+        ceremonyAbort = retry;
+        passkeyLog("withCeremony:retry-call", { cid, label });
+        try {
+          const result = await fn(retry.signal);
+          passkeyLog("withCeremony:retry-ok", { cid, label });
+          return result;
+        } catch (retryErr) {
+          passkeyLogError("withCeremony:retry-error", retryErr, { cid, label });
+          throw retryErr;
+        } finally {
+          if (ceremonyAbort === retry) ceremonyAbort = null;
+        }
+      }
+      throw err;
+    } finally {
+      if (ceremonyAbort === ac) ceremonyAbort = null;
+      passkeyLog("withCeremony:exit", { cid, label, ceremonyAbortCleared: ceremonyAbort === null });
+      await wait(150);
+      ceremonyQueueDepth -= 1;
+    }
+  };
+
+  const ticket = ceremonyQueue.then(run, run);
+  ceremonyQueue = ticket.catch(() => undefined);
+  return ticket;
+}
+
+function isPendingCeremonyError(err: unknown): boolean {
+  const name = err instanceof Error ? err.name : "";
+  const message = err instanceof Error ? err.message : String(err);
+  return name === "InvalidStateError" || /already pending/i.test(message);
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function prfFrom(cred: PublicKeyCredential): Uint8Array {
