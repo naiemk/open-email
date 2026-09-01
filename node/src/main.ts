@@ -75,6 +75,14 @@ await startNode({
     invoices: createMemoryInvoices(),
     fakeCheckout: process.env.FAKE_CHECKOUT === "1",
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? "",
+    commerce: process.env.INVOICE_TO
+        ? {
+            apiUrl: (process.env.COMMERCE_API_URL ?? "https://testnet.trustless-commerce.com").replace(/\/$/, ""),
+            invoiceTo: process.env.INVOICE_TO,
+            publicUrl: (process.env.PUBLIC_URL ?? `https://${domain}`).replace(/\/$/, ""),
+            price: process.env.SIGNUP_PRICE ?? "5.00",
+          }
+        : undefined,
   },
   send: {
     turnstile: {

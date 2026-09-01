@@ -291,8 +291,9 @@ async function handleHttp(
         json(res, 404, { error: "not found" });
         return;
       }
+      const returnUrl = `${url.origin}/?signup=${encodeURIComponent(id)}&paid=1`;
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(payHtml(id));
+      res.end(payHtml(id, returnUrl));
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
@@ -442,17 +443,19 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function payHtml(id: string): string {
+function payHtml(id: string, returnUrl: string): string {
+  const safeReturn = returnUrl.replace(/"/g, "&quot;");
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Pay</title></head>
 <body>
   <p>Testnet checkout for invoice ${id}.</p>
-  <button type="button" id="pay">Mark paid</button>
+  <button type="button" id="pay">Mark paid (test only)</button>
+  <p><a href="${safeReturn}">Return to mailbox signup</a></p>
   <script>
     document.getElementById("pay").onclick = async () => {
       await fetch("/signup/invoice/${id}/pay", { method: "POST" });
-      document.body.textContent = "paid";
+      window.location.href = "${safeReturn}";
     };
   </script>
 </body>

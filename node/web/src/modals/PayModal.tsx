@@ -15,9 +15,21 @@ type Props = {
   onPoll: () => Promise<string>;
   onRegister: () => void;
   onStatus: (status: string) => void;
+  onMarkPaid?: () => Promise<void>;
 };
 
-export function PayModal({ open, meta, signup, error, busy, onClose, onPoll, onRegister, onStatus }: Props) {
+export function PayModal({
+  open,
+  meta,
+  signup,
+  error,
+  busy,
+  onClose,
+  onPoll,
+  onRegister,
+  onStatus,
+  onMarkPaid,
+}: Props) {
   const [polling, setPolling] = useState(false);
 
   useEffect(() => {
@@ -68,6 +80,16 @@ export function PayModal({ open, meta, signup, error, busy, onClose, onPoll, onR
           <Button variant="outline" className="w-full" onClick={() => window.open(payUrl, "_blank", "noopener")}>
             Open invoice in new tab
           </Button>
+          {meta.fakeCheckout && signup.status !== "paid" && onMarkPaid ? (
+            <Button
+              variant="secondary"
+              className="w-full"
+              disabled={busy}
+              onClick={() => void onMarkPaid().catch(() => undefined)}
+            >
+              Mark paid (test only)
+            </Button>
+          ) : null}
           {signup.status === "paid" ? (
             <Button className="w-full" disabled={busy} onClick={onRegister}>
               Register on-chain & continue
