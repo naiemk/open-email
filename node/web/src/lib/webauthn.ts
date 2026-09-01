@@ -2,8 +2,19 @@ import { bytesToHex, hexToBytes, type Hex } from "viem";
 import { generateDek, unwrapDek, wrapDek } from "@client/dek.ts";
 import { openEnvelope, sealEnvelope } from "@client/envelope.ts";
 import { p256CoordsFromPublicKey, webAuthnUserError } from "@client/webauthn-p256.ts";
+import * as mock from "@/lib/webauthn-mock";
 
 export { webAuthnUserError, generateDek, unwrapDek, wrapDek, openEnvelope, sealEnvelope };
+
+let mockMode = false;
+
+export function setMockPasskeyMode(on: boolean): void {
+  mockMode = on || new URLSearchParams(location.search).has("mock");
+}
+
+export function isMockPasskeyMode(): boolean {
+  return mockMode;
+}
 
 const PRF_SALT = new Uint8Array(32);
 new TextEncoder().encode("open-email/prf-kek/v1").forEach((b, i) => {
@@ -28,6 +39,7 @@ export function isValidOeId(oeId: string): boolean {
 }
 
 export async function createPasskey(oeId: string, domain: string): Promise<PasskeyMaterial> {
+  if (mockMode) return mock.mockCreatePasskey(oeId, domain);
   const userId = crypto.getRandomValues(new Uint8Array(16));
   const cred = (await navigator.credentials.create({
     publicKey: {
@@ -53,6 +65,7 @@ export async function createPasskey(oeId: string, domain: string): Promise<Passk
 }
 
 export async function connectPasskey(): Promise<{ credentialId: Hex; kek: Uint8Array }> {
+  if (mockMode) return mock.mockConnectPasskey();
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -65,7 +78,10 @@ export async function connectPasskey(): Promise<{ credentialId: Hex; kek: Uint8A
   return { credentialId: bytesToHex(new Uint8Array(cred.rawId)), kek: prfFrom(cred) };
 }
 
-export async function assertWebAuthn(challenge: Hex): Promise<{
+export async function assertWebAuthn(
+  challenge: Hex,
+  credentialId?: Hex,
+): Promise<{
   r: Hex;
   s: Hex;
   challengeIndex: number;
@@ -73,6 +89,7 @@ export async function assertWebAuthn(challenge: Hex): Promise<{
   authenticatorData: Hex;
   clientDataJSON: string;
 }> {
+  if (mockMode) return mock.mockAssertWebAuthn(challenge, credentialId);
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge: toBufferSource(hexToBytes(challenge)),
@@ -106,7 +123,6 @@ export function encodeRecovery(kek: Uint8Array, wrap: Uint8Array): string {
 }
 
 export function generateTransportKeypair(): { publicKey: Uint8Array; privateKey: Uint8Array } {
-  /* X25519 for HPKE transport during pairing — use generateDek pattern */
   const dek = generateDek();
   return { publicKey: dek.publicKey, privateKey: dek.privateKey };
 }
@@ -114,7 +130,7 @@ export function generateTransportKeypair(): { publicKey: Uint8Array; privateKey:
 function prfFrom(cred: PublicKeyCredential): Uint8Array {
   const ext = cred.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const first = ext.prf?.results?.first;
-  if (!first) throw new Error("Passkey PRF is required");
+  if (!first) throw new Error("Passkey PRF is required — use a device that supports PRF or enable mock mode");
   const kek = new Uint8Array(first);
   if (kek.length !== 32) throw new Error("PRF KEK must be 32 bytes");
   return kek;

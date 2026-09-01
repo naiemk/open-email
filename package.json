@@ -11,6 +11,8 @@
     "test:l2": "RUN_L2_TESTS=1 vitest run relayer/src/l2.test.ts",
     "typecheck": "tsc --noEmit",
     "build:ui": "cd node/web && npm install && npm run build",
+    "dev:ui": "node node/dev-ui.mjs",
+    "dev:ui:backend": "HTTP_PORT=8787 node --experimental-strip-types --no-warnings node/dev-server.ts",
     "prototype:node-ui": "node node/prototype-ui/serve.mjs",
     "package": "bash package.sh"
   },

@@ -29,6 +29,16 @@ export type NodeConfig = {
   send?: SendConfig;
   dataDir?: string;
   signupPrice?: string;
+  devMode?: {
+    mockPasskey: boolean;
+    mockConfig?: {
+      oeId: string;
+      credentialId: Hex;
+      qx: Hex;
+      qy: Hex;
+      secretHex: Hex;
+    };
+  };
 };
 
 export type RunningNode = {
@@ -258,7 +268,17 @@ async function handleHttp(
         turnstileSiteKey: config.signup?.turnstileSiteKey ?? "",
         signupPrice: config.signupPrice ?? "5.00",
         uiBuilt: uiDistExists(),
+        mockPasskey: Boolean(config.devMode?.mockPasskey),
       });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/dev/mock-config") {
+      const cfg = config.devMode?.mockConfig;
+      if (!cfg) {
+        json(res, 404, { error: "not available" });
+        return;
+      }
+      json(res, 200, cfg);
       return;
     }
     if (config.signup && url.pathname.startsWith("/api/")) {

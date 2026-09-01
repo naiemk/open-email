@@ -1,4 +1,5 @@
 import type { Hex } from "viem";
+import { apiJson } from "@/lib/api-fetch";
 
 export type Meta = {
   domain: string;
@@ -6,6 +7,7 @@ export type Meta = {
   fakeCheckout: boolean;
   turnstileSiteKey: string;
   signupPrice: string;
+  mockPasskey?: boolean;
 };
 
 export type SignupDraft = {
@@ -19,7 +21,7 @@ export type SignupDraft = {
 };
 
 export async function fetchMeta(): Promise<Meta> {
-  return (await fetch("/meta")).json() as Promise<Meta>;
+  return apiJson<Meta>("/meta");
 }
 
 export async function createInvoice(input: {
@@ -27,18 +29,15 @@ export async function createInvoice(input: {
   oeId: string;
   turnstile: string;
 }): Promise<{ id: string; payLink: string; status: string }> {
-  const res = await fetch("/signup/invoice", {
+  return apiJson("/signup/invoice", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const body = (await res.json()) as { error?: string; id: string; payLink: string; status: string };
-  if (!res.ok) throw new Error(body.error ?? "invoice failed");
-  return body;
 }
 
 export async function pollInvoice(id: string): Promise<string> {
-  const body = (await (await fetch(`/signup/invoice/${id}`)).json()) as { status: string };
+  const body = await apiJson<{ status: string }>(`/signup/invoice/${id}`);
   return body.status;
 }
 
@@ -51,44 +50,62 @@ export async function registerPaid(input: {
   wrappedDek: Hex;
   auth: unknown;
 }): Promise<{ name: string }> {
-  const res = await fetch("/signup/register", {
+  return apiJson("/signup/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "register failed");
-  return (await res.json()) as { name: string };
 }
 
 export async function confirmSaved(input: { invoiceId: string; credentialId: Hex; auth: unknown }): Promise<void> {
-  const res = await fetch("/signup/confirm", {
+  await apiJson("/signup/confirm", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "confirm failed");
 }
 
 export async function registerChallenge(name: string, dekPublic: Hex, wrappedDek: Hex): Promise<Hex> {
-  const res = await fetch(
+  const body = await apiJson<{ challenge: Hex }>(
     `/api/register-challenge?name=${encodeURIComponent(name)}&dekPublic=${dekPublic}&wrappedDek=${wrappedDek}`,
   );
-  return ((await res.json()) as { challenge: Hex }).challenge;
+  if (!body.challenge) throw new Error("Register challenge unavailable — is the relayer running?");
+  return body.challenge;
 }
 
 export async function optInChallenge(name: string, nodeKey: Hex): Promise<Hex> {
-  const res = await fetch(`/api/opt-in-challenge?name=${encodeURIComponent(name)}&nodeKey=${nodeKey}`);
-  return ((await res.json()) as { challenge: Hex }).challenge;
+  const body = await apiJson<{ challenge: Hex }>(
+    `/api/opt-in-challenge?name=${encodeURIComponent(name)}&nodeKey=${nodeKey}`,
+  );
+  if (!body.challenge) throw new Error("Opt-in challenge unavailable — is the relayer running?");
+  return body.challenge;
 }
 
 export async function bootstrap(name: string, credentialId?: Hex): Promise<{ wrappedDek: Hex }> {
   const q = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : "";
-  return (await (await fetch(`/bootstrap/${encodeURIComponent(name)}${q}`)).json()) as { wrappedDek: Hex };
+  const body = await apiJson<{ wrappedDek?: Hex; error?: string }>(`/bootstrap/${encodeURIComponent(name)}${q}`);
+  const wrap = body.wrappedDek;
+  if (!wrap || wrap === "0x") {
+    throw new Error("Mailbox not registered yet — sign up first or check your OE id");
+  }
+  return { wrappedDek: wrap };
 }
 
 export async function optedIn(name: string, nodeKey: Hex): Promise<boolean> {
-  const body = (await (await fetch(`/api/opted-in/${encodeURIComponent(name)}/${nodeKey}`)).json()) as {
-    optedIn: boolean;
-  };
-  return body.optedIn;
+  const body = await apiJson<{ optedIn: boolean }>(`/api/opted-in/${encodeURIComponent(name)}/${nodeKey}`);
+  return body.optedIn === true;
+}
+
+export type MockConfig = {
+  oeId: string;
+  credentialId: Hex;
+  qx: Hex;
+  qy: Hex;
+  secretHex: Hex;
+};
+
+export async function fetchMockConfig(): Promise<MockConfig | null> {
+  const res = await fetch("/dev/mock-config");
+  if (!res.ok) return null;
+  return (await res.json()) as MockConfig;
 }

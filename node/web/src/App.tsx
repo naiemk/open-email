@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Hex } from "viem";
 import { bytesToHex, hexToBytes } from "viem";
-import { assertWebAuthn, connectPasskey, createPasskey, encodeRecovery, generateDek, isValidOeId, registryName, unwrapDek, webAuthnUserError, wrapDek } from "@/lib/webauthn";
+import {
+  assertWebAuthn,
+  connectPasskey,
+  createPasskey,
+  encodeRecovery,
+  generateDek,
+  isValidOeId,
+  registryName,
+  setMockPasskeyMode,
+  unwrapDek,
+  webAuthnUserError,
+  wrapDek,
+} from "@/lib/webauthn";
 import {
   bootstrap,
   confirmSaved,
   createInvoice,
   fetchMeta,
+  fetchMockConfig,
   optInChallenge,
   optedIn,
   pollInvoice,
@@ -15,11 +28,13 @@ import {
   type Meta,
 } from "@/lib/api";
 import { listPasskeys, rememberPasskey, touchPasskey } from "@/lib/passkeys-store";
+import { seedMockPasskey } from "@/lib/webauthn-mock";
 import { LandingPage } from "@/screens/LandingPage";
 import { InboxPage } from "@/screens/InboxPage";
 import { PayModal } from "@/modals/PayModal";
 import { RecoveryModal } from "@/modals/RecoveryModal";
 import { PairScanModal } from "@/modals/PairScanModal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export type Session = {
   name: string;
@@ -40,21 +55,44 @@ export type SignupState = {
   status: string;
 };
 
+type AuthPhase = "landing" | "paying" | "recovery" | "inbox";
+
 export default function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<AuthPhase>("landing");
   const [session, setSession] = useState<Session | null>(null);
   const [signup, setSignup] = useState<SignupState | null>(null);
-  const [payOpen, setPayOpen] = useState(false);
   const [recovery, setRecovery] = useState("");
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [pendingSession, setPendingSession] = useState<Session | null>(null);
   const [pairScanOpen, setPairScanOpen] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    void fetchMeta().then(setMeta).catch((e) => setError(String(e)));
+    void (async () => {
+      try {
+        const m = await fetchMeta();
+        setMeta(m);
+        const mock = m.mockPasskey || new URLSearchParams(location.search).has("mock");
+        setMockPasskeyMode(mock);
+        if (mock) {
+          const cfg = await fetchMockConfig();
+          if (cfg) {
+            seedMockPasskey({
+              oeId: cfg.oeId,
+              credentialId: cfg.credentialId,
+              qx: cfg.qx,
+              qy: cfg.qy,
+              secretHex: cfg.secretHex,
+            });
+          }
+        }
+      } catch (e) {
+        setError(String(e));
+      }
+    })();
     const params = new URLSearchParams(location.search);
     if (params.get("pair")) setPairScanOpen(true);
   }, []);
@@ -88,6 +126,16 @@ export default function App() {
     }
   }, [busy]);
 
+  const signIn = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
+    if (!meta) return;
+    const name = registryName(oeId, meta.domain);
+    const boot = await bootstrap(name, credentialId);
+    const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
+    const in_ = await optedIn(name, meta.nodeKey);
+    setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
+    setPhase("inbox");
+  };
+
   const onSignUp = (oeId: string) =>
     run(async () => {
       if (!meta) return;
@@ -105,7 +153,7 @@ export default function App() {
         payLink: invoice.payLink,
         status: invoice.status,
       });
-      setPayOpen(true);
+      setPhase("paying");
     });
 
   const onConnect = () =>
@@ -116,11 +164,7 @@ export default function App() {
       const stored = listPasskeys().find((p) => p.credentialId === credentialId);
       const oeId = stored?.oeId ?? prompt("Enter your OE id")?.trim() ?? "";
       if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters with no dots");
-      const name = registryName(oeId, meta.domain);
-      const boot = await bootstrap(name, credentialId);
-      const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
-      const in_ = await optedIn(name, meta.nodeKey);
-      setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
+      await signIn(credentialId, oeId, kek);
     });
 
   const onConnectStored = (credentialId: string, oeId: string) =>
@@ -129,10 +173,29 @@ export default function App() {
       const { credentialId: cid, kek } = await connectPasskey();
       if (cid.toLowerCase() !== credentialId.toLowerCase()) throw new Error("Wrong passkey selected");
       touchPasskey(credentialId);
-      const name = registryName(oeId, meta.domain);
-      const boot = await bootstrap(name, cid);
-      const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
-      setSession({ name, oeId, credentialId: cid, dekPrivate, optedIn: await optedIn(name, meta.nodeKey) });
+      await signIn(cid, oeId, kek);
+    });
+
+  const onDemoSignIn = () =>
+    run(async () => {
+      if (!meta?.mockPasskey) return;
+      const cfg = await fetchMockConfig();
+      if (!cfg) throw new Error("Demo account not configured on this node");
+      seedMockPasskey({
+        oeId: cfg.oeId,
+        credentialId: cfg.credentialId,
+        qx: cfg.qx,
+        qy: cfg.qy,
+        secretHex: cfg.secretHex,
+      });
+      rememberPasskey({
+        credentialId: cfg.credentialId,
+        oeId: cfg.oeId,
+        label: `${cfg.oeId}@${meta.domain}`,
+        lastUsed: Date.now(),
+      });
+      const kek = new Uint8Array(32).fill(9);
+      await signIn(cfg.credentialId, cfg.oeId, kek);
     });
 
   const onPaidRegister = () =>
@@ -143,7 +206,7 @@ export default function App() {
       const dekPublic = bytesToHex(dek.publicKey);
       const name = registryName(signup.oeId, meta.domain);
       const challenge = await registerChallenge(name, dekPublic, wrappedDek);
-      const auth = await assertWebAuthn(challenge);
+      const auth = await assertWebAuthn(challenge, signup.credentialId);
       await registerPaid({
         invoiceId: signup.invoiceId,
         credentialId: signup.credentialId,
@@ -156,41 +219,52 @@ export default function App() {
       const recoveryKek = crypto.getRandomValues(new Uint8Array(32));
       const recoveryWrap = wrapDek(dek.privateKey, recoveryKek);
       setRecovery(encodeRecovery(recoveryKek, recoveryWrap));
-      setRecoveryOpen(true);
-      setSession({
+      setPendingSession({
         name,
         oeId: signup.oeId,
         credentialId: signup.credentialId,
         dekPrivate: dek.privateKey,
         optedIn: false,
       });
+      setPhase("recovery");
     });
 
   const onRecoverySaved = () =>
     run(async () => {
-      if (!signup || !meta) return;
+      if (!signup || !meta || !pendingSession) return;
       const challenge = await optInChallenge(registryName(signup.oeId, meta.domain), meta.nodeKey);
-      const auth = await assertWebAuthn(challenge);
+      const auth = await assertWebAuthn(challenge, signup.credentialId);
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });
-      setRecoveryOpen(false);
-      setPayOpen(false);
+      setSession({ ...pendingSession, optedIn: true });
+      setPendingSession(null);
       setSignup(null);
       setRecovery("");
-      setSession((s) => (s ? { ...s, optedIn: true } : s));
+      setPhase("inbox");
     });
+
+  const logout = () => {
+    setSession(null);
+    setPendingSession(null);
+    setSignup(null);
+    setRecovery("");
+    setPhase("landing");
+    setError("");
+  };
 
   if (!meta) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
   }
 
-  if (session) {
+  if (phase === "inbox" && session) {
     return (
-      <InboxPage
-        meta={meta}
-        session={session}
-        onLogout={() => setSession(null)}
-        onSessionUpdate={(patch) => setSession((s) => (s ? { ...s, ...patch } : s))}
-      />
+      <ErrorBoundary onReset={logout}>
+        <InboxPage
+          meta={meta}
+          session={session}
+          onLogout={logout}
+          onSessionUpdate={(patch) => setSession((s) => (s ? { ...s, ...patch } : s))}
+        />
+      </ErrorBoundary>
     );
   }
 
@@ -206,19 +280,31 @@ export default function App() {
         onConnect={onConnect}
         onConnectStored={onConnectStored}
         onAddDevice={() => setPairScanOpen(true)}
+        onDemoSignIn={meta.mockPasskey ? onDemoSignIn : undefined}
       />
       <PayModal
-        open={payOpen}
+        open={phase === "paying"}
         meta={meta}
         signup={signup}
         error={error}
         busy={busy}
-        onClose={() => setPayOpen(false)}
-        onPoll={() => signup && pollInvoice(signup.invoiceId)}
+        onClose={() => {
+          setPhase("landing");
+          setSignup(null);
+        }}
+        onPoll={async () => {
+          if (!signup) throw new Error("No signup in progress");
+          return pollInvoice(signup.invoiceId);
+        }}
         onRegister={onPaidRegister}
         onStatus={(status) => signup && setSignup({ ...signup, status })}
       />
-      <RecoveryModal open={recoveryOpen} secret={recovery} onSaved={onRecoverySaved} busy={busy} />
+      <RecoveryModal
+        open={phase === "recovery"}
+        secret={recovery}
+        onSaved={onRecoverySaved}
+        busy={busy}
+      />
       <PairScanModal
         open={pairScanOpen}
         meta={meta}
@@ -226,6 +312,7 @@ export default function App() {
         onDone={(s) => {
           setPairScanOpen(false);
           setSession(s);
+          setPhase("inbox");
         }}
       />
     </>

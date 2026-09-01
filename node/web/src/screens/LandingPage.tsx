@@ -16,6 +16,7 @@ type Props = {
   onConnect: () => void;
   onConnectStored: (credentialId: string, oeId: string) => void;
   onAddDevice: () => void;
+  onDemoSignIn?: () => void;
 };
 
 export function LandingPage({
@@ -28,6 +29,7 @@ export function LandingPage({
   onConnect,
   onConnectStored,
   onAddDevice,
+  onDemoSignIn,
 }: Props) {
   const [oeId, setOeId] = useState("");
   const [signInOpen, setSignInOpen] = useState(false);
@@ -92,6 +94,11 @@ export function LandingPage({
                 ))}
               </div>
               <div className="flex flex-wrap gap-2 pt-2">
+                {onDemoSignIn ? (
+                  <Button variant="secondary" disabled={busy} onClick={onDemoSignIn}>
+                    Demo sign in
+                  </Button>
+                ) : null}
                 <Button variant="outline" disabled={busy} onClick={() => setSignInOpen(true)}>
                   Sign in with passkey
                 </Button>
