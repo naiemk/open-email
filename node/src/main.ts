@@ -32,7 +32,10 @@ if (!dkimPem.includes("PRIVATE KEY")) {
 }
 
 const turnstileSecret = process.env.TURNSTILE_SECRET ?? "";
-const disableTurnstile = process.env.DISABLE_TURNSTILE === "1";
+/** Testnet skips Turnstile while debugging; set DISABLE_TURNSTILE=0 to re-enable. */
+const disableTurnstile =
+  process.env.DISABLE_TURNSTILE === "1" ||
+  (domain === "testnet.crypted.email" && process.env.DISABLE_TURNSTILE !== "0");
 const turnstileVerify = createTurnstileVerifier(turnstileSecret, disableTurnstile);
 const blobs = createDiskBlobStore(join(dataDir, "blobs"));
 const index = createMailIndex({
