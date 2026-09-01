@@ -25,7 +25,7 @@ export function RecoveryModal({ open, secret, error, busy, onSaved }: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <pre className="overflow-auto rounded-lg bg-accent p-4 text-xs text-accent-foreground">{secret}</pre>
+          <pre className="max-h-[40vh] overflow-auto rounded-lg bg-accent p-4 text-[11px] text-accent-foreground md:text-xs">{secret}</pre>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <Button
             className="w-full"

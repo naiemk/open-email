@@ -4,9 +4,9 @@ import { Card } from "@/components/ui/card";
 export function Dialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 md:items-center md:p-6">
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg">{children}</div>
+      <div className="relative z-10 w-full max-w-lg max-h-[90dvh] overflow-auto">{children}</div>
     </div>
   );
 }

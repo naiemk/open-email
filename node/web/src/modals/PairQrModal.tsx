@@ -72,7 +72,11 @@ export function PairQrModal({ open, name, credentialId, dekPrivate, onClose }: P
           <CardDescription>Scan this QR on the new device (Add device to another account).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
-          {qr ? <img src={qr} alt="Pairing QR" className="mx-auto rounded-lg" /> : <p>Starting session…</p>}
+          {qr ? (
+            <img src={qr} alt="Pairing QR" className="mx-auto w-[min(280px,80vw)] rounded-lg" />
+          ) : (
+            <p>Starting session…</p>
+          )}
           <p className="text-xs text-muted-foreground">Session {sid.slice(0, 24)}… · {status}</p>
           {status === "granted" ? <p className="text-sm text-primary">DEK sent. Finish on the other device.</p> : null}
           <Button variant="ghost" className="w-full" onClick={onClose}>
