@@ -80,7 +80,7 @@ export function PayModal({
           <Button variant="outline" className="w-full" onClick={() => window.open(payUrl, "_blank", "noopener")}>
             Open invoice in new tab
           </Button>
-          {meta.fakeCheckout && signup.status !== "paid" && onMarkPaid ? (
+          {signup.status !== "paid" && onMarkPaid ? (
             <Button
               variant="secondary"
               className="w-full"
@@ -96,9 +96,8 @@ export function PayModal({
             </Button>
           ) : (
             <p className="text-xs text-muted-foreground">
-              {meta.fakeCheckout
-                ? "Testnet: open the invoice page and click Mark paid, then we continue automatically."
-                : "Pay in the new tab. This modal updates when payment is confirmed."}
+              Pay in the new tab, or use Mark paid (test only) to skip checkout. This modal updates when payment is
+              confirmed.
             </p>
           )}
           <Button variant="ghost" className="w-full" onClick={onClose}>

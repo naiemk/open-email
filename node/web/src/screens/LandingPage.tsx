@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Meta } from "@/lib/api";
 import type { StoredPasskey } from "@/lib/passkeys-store";
+import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +39,10 @@ export function LandingPage({
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f1fb] to-[#ebe6f5]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <div className="text-lg font-bold text-accent">{meta.domain}</div>
+        <div className="flex items-center gap-2.5">
+          <BrandMark size={32} />
+          <div className="text-lg font-bold text-accent">{meta.domain}</div>
+        </div>
       </header>
       <main className="mx-auto grid max-w-5xl gap-8 px-6 pb-16 md:grid-cols-[1.1fr_0.9fr]">
         <section>

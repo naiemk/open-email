@@ -29,7 +29,7 @@ import {
   registerPaid,
   type Meta,
 } from "@/lib/api";
-import { listPasskeys, rememberPasskey, touchPasskey } from "@/lib/passkeys-store";
+import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
   loadSignupDraft,
@@ -178,27 +178,88 @@ export default function App() {
   };
 
   const resumeUnpaidSignup = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
+    if (!meta) return;
     const local = loadSignupDraft(credentialId);
-    const remote = await fetchOpenSignup(credentialId);
-    if (!local && !remote) {
-      throw new Error("Mailbox not registered yet — finish signup or check your OE id");
+    const stored = findPasskey(credentialId);
+    let qx = local?.qx ?? stored?.qx;
+    let qy = local?.qy ?? stored?.qy;
+    let remote = await fetchOpenSignup(credentialId);
+
+    // Orphan passkey (pre-draft era): coords were never persisted, so this credential
+    // can never call register. Mint a fresh passkey for the same OE id and continue.
+    if ((!qx || !qy) && !(remote?.qx && remote?.qy)) {
+      const mat = await createPasskey(oeId, meta.domain);
+      removePasskey(credentialId);
+      rememberPasskey({
+        credentialId: mat.credentialId,
+        oeId,
+        label: `${oeId}@${meta.domain}`,
+        lastUsed: Date.now(),
+        qx: mat.qx,
+        qy: mat.qy,
+      });
+      const invoice = await createInvoice({
+        credentialId: mat.credentialId,
+        oeId,
+        turnstile: turnstile(),
+        qx: mat.qx,
+        qy: mat.qy,
+      });
+      const next: SignupState = {
+        oeId,
+        credentialId: mat.credentialId,
+        qx: mat.qx,
+        qy: mat.qy,
+        kek: mat.kek,
+        invoiceId: invoice.id,
+        payLink: invoice.payLink,
+        status: invoice.status,
+      };
+      setSignup(next);
+      saveSignupDraft(next);
+      setPhase("paying");
+      return;
     }
-    const invoiceId = remote?.id ?? local!.invoiceId;
-    const status = remote ? remote.status : local!.status;
-    const payLink = remote?.payLink ?? local!.payLink;
-    const resolvedOeId = remote?.oeId ?? local?.oeId ?? oeId;
-    if (!local?.qx || !local?.qy) {
-      throw new Error("Signup keys missing locally — use the same browser where you started signup");
+
+    qx = qx ?? remote!.qx!;
+    qy = qy ?? remote!.qy!;
+
+    if (!remote) {
+      const invoice = await createInvoice({
+        credentialId,
+        oeId,
+        turnstile: turnstile(),
+        qx,
+        qy,
+      });
+      remote = {
+        id: invoice.id,
+        payLink: invoice.payLink,
+        status: invoice.status,
+        oeId,
+        qx: invoice.qx ?? qx,
+        qy: invoice.qy ?? qy,
+      };
     }
-    const next: SignupState = {
-      oeId: resolvedOeId,
+
+    rememberPasskey({
       credentialId,
-      qx: local.qx,
-      qy: local.qy,
+      oeId: remote.oeId || oeId,
+      label: `${remote.oeId || oeId}@${meta.domain}`,
+      lastUsed: Date.now(),
+      qx,
+      qy,
+    });
+
+    const next: SignupState = {
+      oeId: remote.oeId || oeId,
+      credentialId,
+      qx,
+      qy,
       kek,
-      invoiceId,
-      payLink,
-      status,
+      invoiceId: remote.id,
+      payLink: remote.payLink,
+      status: remote.status,
     };
     setSignup(next);
     saveSignupDraft(next);
@@ -210,8 +271,21 @@ export default function App() {
       if (!meta) return;
       if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters with no dots");
       const mat = await createPasskey(oeId, meta.domain);
-      rememberPasskey({ credentialId: mat.credentialId, oeId, label: `${oeId}@${meta.domain}`, lastUsed: Date.now() });
-      const invoice = await createInvoice({ credentialId: mat.credentialId, oeId, turnstile: turnstile() });
+      rememberPasskey({
+        credentialId: mat.credentialId,
+        oeId,
+        label: `${oeId}@${meta.domain}`,
+        lastUsed: Date.now(),
+        qx: mat.qx,
+        qy: mat.qy,
+      });
+      const invoice = await createInvoice({
+        credentialId: mat.credentialId,
+        oeId,
+        turnstile: turnstile(),
+        qx: mat.qx,
+        qy: mat.qy,
+      });
       setSignup({
         oeId,
         credentialId: mat.credentialId,
@@ -375,15 +449,11 @@ export default function App() {
           if (!signup) throw new Error("No signup in progress");
           return pollInvoice(signup.invoiceId);
         }}
-        onMarkPaid={
-          meta.fakeCheckout
-            ? async () => {
-                if (!signup) return;
-                await markInvoicePaid(signup.invoiceId);
-                setSignup({ ...signup, status: "paid" });
-              }
-            : undefined
-        }
+        onMarkPaid={async () => {
+          if (!signup) return;
+          await markInvoicePaid(signup.invoiceId);
+          setSignup({ ...signup, status: "paid" });
+        }}
         onRegister={onPaidRegister}
         onStatus={(status) => signup && setSignup({ ...signup, status })}
       />
