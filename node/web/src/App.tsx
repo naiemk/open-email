@@ -45,6 +45,12 @@ import {
   loadPendingRecovery,
   savePendingRecovery,
 } from "@/lib/pending-recovery";
+import {
+  clearStoredSession,
+  loadStoredSession,
+  PENDING_OPTIN_KEY,
+  saveStoredSession,
+} from "@/lib/session-store";
 import { seedMockPasskey } from "@/lib/webauthn-mock";
 import { LandingPage } from "@/screens/LandingPage";
 import { InboxPage } from "@/screens/InboxPage";
@@ -120,8 +126,23 @@ export default function App() {
       resumeRecovery(recoveryId);
     } else if (signupId) {
       void resumeFromInvoice(signupId, paid);
+    } else {
+      const stored = loadStoredSession();
+      if (stored) {
+        setSession(stored);
+        setPhase("inbox");
+        passkeyLog("boot:restore-session", { oeId: stored.oeId, optedIn: stored.optedIn });
+      }
     }
   }, []);
+
+  /** Full navigation clears the browser WebAuthn slot before inbox or opt-in. */
+  const enterInbox = (next: Session) => {
+    saveStoredSession(next);
+    if (!next.optedIn) sessionStorage.setItem(PENDING_OPTIN_KEY, "1");
+    passkeyLog("enterInbox:reload", { oeId: next.oeId, optedIn: next.optedIn });
+    location.assign(location.pathname);
+  };
 
   /** Reload after on-chain register so opt-in assert is the only WebAuthn call on this page. */
   const redirectToRecovery = (input: {
@@ -241,10 +262,8 @@ export default function App() {
       const boot = await bootstrap(name, credentialId);
       const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
       const in_ = await optedIn(name, meta.nodeKey);
-      setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
       clearSignupDraft(credentialId);
-      setPhase("inbox");
-      passkeyLog("signIn:registered-inbox", { oeId });
+      enterInbox({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
       return;
     } catch {
       passkeyLog("signIn:not-registered-resume", { oeId });
@@ -483,18 +502,18 @@ export default function App() {
       passkeyLog("onRecoverySaved:assert-webauthn-ok");
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });
       clearPendingRecovery();
-      setSession({ ...pendingSession, optedIn: true });
-      setPendingSession(null);
       clearSignupDraft(signup.credentialId);
       setSignup(null);
       setRecovery("");
-      setPhase("inbox");
+      setPendingSession(null);
+      enterInbox({ ...pendingSession, optedIn: true });
     });
 
   const logout = () => {
     passkeyLog("logout");
     abortPasskeyCeremony();
     clearPendingRecovery();
+    clearStoredSession();
     setSession(null);
     setPendingSession(null);
     setSignup(null);
@@ -514,7 +533,14 @@ export default function App() {
           meta={meta}
           session={session}
           onLogout={logout}
-          onSessionUpdate={(patch) => setSession((s) => (s ? { ...s, ...patch } : s))}
+          onSessionUpdate={(patch) =>
+            setSession((s) => {
+              if (!s) return s;
+              const next = { ...s, ...patch };
+              saveStoredSession(next);
+              return next;
+            })
+          }
         />
       </ErrorBoundary>
     );

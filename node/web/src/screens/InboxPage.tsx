@@ -4,6 +4,7 @@ import type { Meta } from "@/lib/api";
 import type { Session } from "@/App";
 import { optedIn as fetchOptedIn } from "@/lib/api";
 import { assertWebAuthn } from "@/lib/webauthn";
+import { PENDING_OPTIN_KEY, saveStoredSession } from "@/lib/session-store";
 import { decryptRows, fetchIndex, type Mail, smtpFrom } from "@/lib/mail";
 import { SidebarNav, type Folder } from "@/components/mail/SidebarNav";
 import { MessageList } from "@/components/mail/MessageList";
@@ -35,6 +36,16 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [storage, setStorage] = useState({ total_size: 0, cap: 5 * 1024 * 1024, warn: false });
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [optInBusy, setOptInBusy] = useState(false);
+  const [optInReady, setOptInReady] = useState(
+    () => sessionStorage.getItem(PENDING_OPTIN_KEY) === "1" && !session.optedIn,
+  );
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("optin") === "1") {
+      history.replaceState({}, "", location.pathname);
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     setLoadError("");
@@ -95,18 +106,59 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     await reload();
   };
 
+  const completeOptIn = async () => {
+    setError("");
+    setOptInBusy(true);
+    try {
+      const ch = (
+        (await (
+          await fetch(
+            `/api/opt-in-challenge?name=${encodeURIComponent(session.name)}&nodeKey=${meta.nodeKey}`,
+          )
+        ).json()) as { challenge: Hex }
+      ).challenge;
+      const auth = await assertWebAuthn(ch, session.credentialId);
+      await fetch("/api/opt-in", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: session.name, nodeKey: meta.nodeKey, auth }),
+      });
+      sessionStorage.removeItem(PENDING_OPTIN_KEY);
+      setOptInReady(false);
+      onSessionUpdate({ optedIn: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOptInBusy(false);
+    }
+  };
+
   const optToggle = async () => {
-    const in_ = !session.optedIn;
-    const path = in_ ? "/api/opt-in" : "/api/opt-out";
-    const challengePath = in_ ? "/api/opt-in-challenge" : "/api/opt-out-challenge";
-    const ch = ((await (await fetch(`${challengePath}?name=${encodeURIComponent(session.name)}&nodeKey=${meta.nodeKey}`)).json()) as { challenge: Hex }).challenge;
-    const auth = await assertWebAuthn(ch, session.credentialId);
-    await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: session.name, nodeKey: meta.nodeKey, auth }),
-    });
-    onSessionUpdate({ optedIn: in_ });
+    if (session.optedIn) {
+      setError("");
+      const ch = (
+        (await (
+          await fetch(
+            `/api/opt-out-challenge?name=${encodeURIComponent(session.name)}&nodeKey=${meta.nodeKey}`,
+          )
+        ).json()) as { challenge: Hex }
+      ).challenge;
+      const auth = await assertWebAuthn(ch, session.credentialId);
+      await fetch("/api/opt-out", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: session.name, nodeKey: meta.nodeKey, auth }),
+      });
+      onSessionUpdate({ optedIn: false });
+      return;
+    }
+    if (optInReady || sessionStorage.getItem(PENDING_OPTIN_KEY) === "1") {
+      await completeOptIn();
+      return;
+    }
+    saveStoredSession(session);
+    sessionStorage.setItem(PENDING_OPTIN_KEY, "1");
+    location.assign(`${location.pathname}?optin=1`);
   };
 
   if (screen === "settings-full") {
@@ -149,6 +201,22 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
             Retry
           </button>
         </div>
+      ) : null}
+      {optInReady && !session.optedIn ? (
+        <div className="flex items-center justify-between gap-3 border-b border-primary/20 bg-primary/5 px-4 py-2 text-sm">
+          <span>Opt in to receive mail on this node — confirm with your passkey.</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+            disabled={optInBusy}
+            onClick={() => void completeOptIn()}
+          >
+            {optInBusy ? "Waiting…" : "Opt in"}
+          </button>
+        </div>
+      ) : null}
+      {error ? (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
       ) : null}
       <div className="flex min-h-0 flex-1">
         <SidebarNav
