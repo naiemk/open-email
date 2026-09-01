@@ -78,3 +78,29 @@ export async function optOutViaRelayer(session: RelayerSession, name: string, no
   });
   if (!res.ok) throw new Error(await res.text());
 }
+
+export async function linkViaRelayer(
+  session: RelayerSession,
+  name: string,
+  nodeKey: Hex,
+  newPasskey: Passkey,
+  inviteId: Hex,
+): Promise<void> {
+  const challengeRes = await fetch(
+    `${session.url}/link-challenge?name=${name}&nodeKey=${nodeKey}&newQx=${newPasskey.qx}&newQy=${newPasskey.qy}&inviteId=${inviteId}`,
+  );
+  const { challenge } = (await challengeRes.json()) as { challenge: Hex };
+  const res = await fetch(`${session.url}/link`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name,
+      nodeKey,
+      newQx: newPasskey.qx,
+      newQy: newPasskey.qy,
+      inviteId,
+      auth: signWebAuthn(hexToBytes(challenge), session.passkey.secretKey),
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}

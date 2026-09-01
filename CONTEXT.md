@@ -24,6 +24,10 @@ _Avoid_: deposited ENS, custodied ENS, minted .eth
 The on-chain open-email contract that maps **name** → user (WebAuthn) and records node registration and opt-in/out.
 _Avoid_: ENS registrar, ENS registry (different contracts), user database
 
+**Controller**:
+A WebAuthn P-256 key authorized to sign registry writes (`optIn`, `optOut`, `linkNode`, `removeController`) for a **name**. A **name** may have several; the first is set at `register`.
+_Avoid_: owner, account key, password
+
 **Registry owner**:
 The address allowed to register a **node** on the **registry**. On this testnet it is the same EOA the **relayer** signs with.
 _Avoid_: registry admin, contract admin, owner (ambiguous with ENS holder)

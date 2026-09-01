@@ -9,6 +9,7 @@
     "test:client": "vitest run client",
     "test:relayer": "vitest run relayer",
     "test:l2": "RUN_L2_TESTS=1 vitest run relayer/src/l2.test.ts",
+    "test:e2e": "npx playwright test",
     "typecheck": "tsc --noEmit",
     "build:ui": "cd node/web && npm install && npm run build",
     "dev:ui": "node node/dev-ui.mjs",
@@ -22,6 +23,7 @@
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "esbuild": "^0.28.2",
+    "geoip-country": "^5.0.202608290418",
     "lucide-react": "^1.39.0",
     "multiformats": "^14.0.5",
     "postal-mime": "^3.0.0",
@@ -29,6 +31,7 @@
     "viem": "^2.56.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^26.4.0",
     "@types/react": "^19.1.12",

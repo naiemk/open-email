@@ -57,6 +57,7 @@ import { InboxPage } from "@/screens/InboxPage";
 import { PayModal } from "@/modals/PayModal";
 import { RecoveryModal } from "@/modals/RecoveryModal";
 import { PairScanModal } from "@/modals/PairScanModal";
+import { ServicePairOpenModal } from "@/modals/ServicePairOpenModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export type Session = {
@@ -90,6 +91,8 @@ export default function App() {
   const [recovery, setRecovery] = useState("");
   const [pendingSession, setPendingSession] = useState<Session | null>(null);
   const [pairScanOpen, setPairScanOpen] = useState(false);
+  const [servicePairOpen, setServicePairOpen] = useState(false);
+  const [openExistingOeId, setOpenExistingOeId] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -558,6 +561,10 @@ export default function App() {
         onConnect={onConnect}
         onConnectStored={onConnectStored}
         onAddDevice={() => setPairScanOpen(true)}
+        onOpenExisting={(oeId) => {
+          setOpenExistingOeId(oeId);
+          setServicePairOpen(true);
+        }}
         onDemoSignIn={meta.mockPasskey ? onDemoSignIn : undefined}
       />
       <PayModal
@@ -596,6 +603,16 @@ export default function App() {
           setPairScanOpen(false);
           setSession(s);
           setPhase("inbox");
+        }}
+      />
+      <ServicePairOpenModal
+        open={servicePairOpen}
+        meta={meta}
+        initialOeId={openExistingOeId}
+        onClose={() => setServicePairOpen(false)}
+        onDone={(s) => {
+          setServicePairOpen(false);
+          enterInbox(s);
         }}
       />
     </>

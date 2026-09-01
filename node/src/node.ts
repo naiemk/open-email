@@ -13,8 +13,11 @@ import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
 import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
+import { handleServicePair } from "./service-pair.ts";
 import { createMailboxStateStore, type MailboxStateStore } from "./mailbox-state.ts";
 import { serveUiAsset, uiDistExists } from "./ui-static.ts";
+import { resolveGeo, resolvePayLocale } from "./geo.ts";
+import { payStrings } from "./pay-i18n.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -33,6 +36,7 @@ export type NodeConfig = {
   send?: SendConfig;
   dataDir?: string;
   signupPrice?: string;
+  relayerUrl?: string;
   devMode?: {
     mockPasskey: boolean;
     mockConfig?: {
@@ -235,6 +239,7 @@ async function handleHttp(
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
     if (await handlePair(req, url, res, pair, credentialWraps)) return;
+    if (await handleServicePair(req, url, res, config, credentialWraps)) return;
     if (
       config.signup &&
       (await handleSignup(req, url, res, config.signup, config.nodeKey, takeOptSlot))
@@ -277,6 +282,10 @@ async function handleHttp(
       });
       return;
     }
+    if (req.method === "GET" && url.pathname === "/geo") {
+      json(res, 200, resolveGeo(req));
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/dev/mock-config") {
       const cfg = config.devMode?.mockConfig;
       if (!cfg) {
@@ -286,8 +295,14 @@ async function handleHttp(
       json(res, 200, cfg);
       return;
     }
-    if (config.signup && url.pathname.startsWith("/api/")) {
-      await proxyRelayer(req, url, res, config.signup.relayerUrl, takeOptSlot);
+    if ((config.signup || config.relayerUrl) && url.pathname.startsWith("/api/")) {
+      await proxyRelayer(
+        req,
+        url,
+        res,
+        config.signup?.relayerUrl ?? config.relayerUrl!,
+        takeOptSlot,
+      );
       return;
     }
     if (req.method === "GET" && url.pathname === "/pay") {
@@ -298,7 +313,7 @@ async function handleHttp(
       }
       const returnUrl = `${url.origin}/?signup=${encodeURIComponent(id)}&paid=1`;
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(payHtml(id, returnUrl));
+      res.end(payHtml(id, returnUrl, resolvePayLocale(req)));
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
@@ -436,9 +451,16 @@ async function proxyRelayer(
     path === "/register-challenge" ||
     path === "/opt-in-challenge" ||
     path === "/opt-out-challenge" ||
+    path === "/link-challenge" ||
+    path === "/remove-controller-challenge" ||
     path === "/opt-in" ||
     path === "/opt-out" ||
-    path.startsWith("/opted-in/");
+    path === "/link" ||
+    path === "/remove-controller" ||
+    path.startsWith("/opted-in/") ||
+    path.startsWith("/names/") ||
+    path.startsWith("/nodes/") ||
+    path.startsWith("/invite-used/");
   if (!allowed) {
     json(res, 404, { error: "not found" });
     return;
@@ -492,15 +514,17 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function payHtml(id: string, returnUrl: string): string {
+function payHtml(id: string, returnUrl: string, locale: string): string {
   const safeReturn = returnUrl.replace(/"/g, "&quot;");
+  const s = payStrings(locale);
+  const dir = locale === "ar" || locale === "fa" ? "rtl" : "ltr";
   return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Pay</title></head>
+<html lang="${locale}" dir="${dir}">
+<head><meta charset="utf-8"><title>${s.title}</title></head>
 <body>
-  <p>Testnet checkout for invoice ${id}.</p>
-  <button type="button" id="pay">Mark paid (test only)</button>
-  <p><a href="${safeReturn}">Return to mailbox signup</a></p>
+  <p>${s.checkout(id)}</p>
+  <button type="button" id="pay">${s.markPaid}</button>
+  <p><a href="${safeReturn}">${s.returnLabel}</a></p>
   <script>
     document.getElementById("pay").onclick = async () => {
       await fetch("/signup/invoice/${id}/pay", { method: "POST" });

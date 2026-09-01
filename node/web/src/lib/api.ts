@@ -124,6 +124,100 @@ export async function optedIn(name: string, nodeKey: Hex): Promise<boolean> {
   return body.optedIn === true;
 }
 
+export async function fetchName(name: string): Promise<{
+  exists: boolean;
+  qx: Hex;
+  qy: Hex;
+  dekPublic: Hex;
+  wrappedDek: Hex;
+}> {
+  return apiJson(`/api/names/${encodeURIComponent(name)}`);
+}
+
+export async function fetchNode(nodeKey: Hex): Promise<{ domain: string; nodeKey: Hex }> {
+  return apiJson(`/api/nodes/${encodeURIComponent(nodeKey)}`);
+}
+
+export async function fetchInviteUsed(inviteId: Hex): Promise<boolean> {
+  const body = await apiJson<{ used: boolean }>(`/api/invite-used/${encodeURIComponent(inviteId)}`);
+  return body.used === true;
+}
+
+export async function linkChallenge(
+  name: string,
+  nodeKey: Hex,
+  newQx: Hex,
+  newQy: Hex,
+  inviteId: Hex,
+): Promise<Hex> {
+  const body = await apiJson<{ challenge: Hex }>(
+    `/api/link-challenge?name=${encodeURIComponent(name)}&nodeKey=${nodeKey}&newQx=${newQx}&newQy=${newQy}&inviteId=${inviteId}`,
+  );
+  if (!body.challenge) throw new Error("Link challenge unavailable");
+  return body.challenge;
+}
+
+export async function submitLink(input: {
+  name: string;
+  nodeKey: Hex;
+  newQx: Hex;
+  newQy: Hex;
+  inviteId: Hex;
+  auth: unknown;
+}): Promise<void> {
+  await apiJson("/api/link", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function removeControllerChallenge(name: string, qx: Hex, qy: Hex): Promise<Hex> {
+  const body = await apiJson<{ challenge: Hex }>(
+    `/api/remove-controller-challenge?name=${encodeURIComponent(name)}&qx=${qx}&qy=${qy}`,
+  );
+  if (!body.challenge) throw new Error("Remove-controller challenge unavailable");
+  return body.challenge;
+}
+
+export async function submitRemoveController(input: {
+  name: string;
+  qx: Hex;
+  qy: Hex;
+  auth: unknown;
+}): Promise<void> {
+  await apiJson("/api/remove-controller", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function signServiceInvite(input: {
+  name: string;
+  qx: Hex;
+  qy: Hex;
+  guestPub: Hex;
+}): Promise<{ invite: unknown; blob: string }> {
+  return apiJson("/pair/invite-sign", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function storeServiceWrap(input: {
+  name: string;
+  credentialId: Hex;
+  wrappedDek: Hex;
+}): Promise<void> {
+  await apiJson("/pair/service-wrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
 export type MockConfig = {
   oeId: string;
   credentialId: Hex;
