@@ -18,5 +18,8 @@ export function relayerHint(err: unknown): string {
   if (/relayer unreachable|fetch failed|ECONNREFUSED/i.test(msg)) {
     return "Relayer is down — register needs open-email-api on the node network";
   }
+  if (/InvalidPasskey/i.test(msg)) {
+    return "Passkey signature rejected on-chain — stored key data may be stale. Sign up again with a fresh passkey.";
+  }
   return msg;
 }

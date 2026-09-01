@@ -36,7 +36,6 @@ import { passkeyLog, passkeyLogError } from "@/lib/passkey-log";
 import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
-  loadLatestOpenSignupDraft,
   loadSignupDraft,
   loadSignupDraftByInvoice,
   saveSignupDraft,
@@ -113,15 +112,15 @@ export default function App() {
     const paid = params.get("paid") === "1";
     if (signupId) {
       void resumeFromInvoice(signupId, paid);
-    } else {
-      const open = loadLatestOpenSignupDraft();
-      if (open) {
-        passkeyLog("boot:resume-open-draft", { oeId: open.oeId, status: open.status, invoiceId: open.invoiceId });
-        setSignup(open);
-        setPhase("paying");
-      }
     }
   }, []);
+
+  /** Full navigation clears the browser WebAuthn slot before a later register/assert. */
+  const redirectToSignup = (draft: SignupState) => {
+    saveSignupDraft(draft);
+    passkeyLog("redirectToSignup", { oeId: draft.oeId, invoiceId: draft.invoiceId, status: draft.status });
+    location.assign(`${location.pathname}?signup=${encodeURIComponent(draft.invoiceId)}`);
+  };
 
   const resumeFromInvoice = async (invoiceId: string, paidHint: boolean) => {
     try {
@@ -134,6 +133,7 @@ export default function App() {
       setSignup(next);
       saveSignupDraft(next);
       setPhase("paying");
+      passkeyLog("resumeFromInvoice", { oeId: next.oeId, invoiceId, status });
       history.replaceState({}, "", location.pathname);
     } catch {
       /* ignore stale redirect */
@@ -242,10 +242,8 @@ export default function App() {
         payLink: invoice.payLink,
         status: invoice.status,
       };
-      setSignup(next);
-      saveSignupDraft(next);
-      setPhase("paying");
       passkeyLog("resumeUnpaidSignup:paying-after-mint", { oeId, invoiceId: invoice.id });
+      redirectToSignup(next);
       return;
     }
 
@@ -289,10 +287,8 @@ export default function App() {
       payLink: remote.payLink,
       status: remote.status,
     };
-    setSignup(next);
-    saveSignupDraft(next);
-    setPhase("paying");
     passkeyLog("resumeUnpaidSignup:paying", { oeId, invoiceId: remote.id, status: remote.status });
+    redirectToSignup(next);
   };
 
   const onSignUp = (oeId: string) =>
@@ -325,7 +321,6 @@ export default function App() {
         payLink: invoice.payLink,
         status: invoice.status,
       });
-      // Reload so register is the only WebAuthn get this session (create already ran).
       passkeyLog("onSignUp:reload-for-pay", { invoiceId: invoice.id });
       location.assign(`${location.pathname}?signup=${encodeURIComponent(invoice.id)}`);
     });
@@ -345,18 +340,7 @@ export default function App() {
     run("onConnectStored", async () => {
       if (!meta) return;
       const cid = credentialId as Hex;
-      const draft = loadSignupDraft(cid);
-      if (draft?.oeId === oeId) {
-        const name = registryName(oeId, meta.domain);
-        try {
-          await bootstrap(name, cid);
-          passkeyLog("onConnectStored:registered-use-connect", { oeId });
-        } catch {
-          passkeyLog("onConnectStored:unpaid-draft-skip-connect", { oeId, invoiceId: draft.invoiceId });
-          await resumeUnpaidSignup(cid, oeId, draft.kek);
-          return;
-        }
-      }
+      passkeyLog("onConnectStored:start", { oeId, credentialId: cid.slice(0, 18) });
       const { credentialId: got, kek } = await connectPasskey(cid);
       touchPasskey(credentialId);
       await signIn(got, oeId, kek);
@@ -409,12 +393,18 @@ export default function App() {
       passkeyLog("onPaidRegister:assert-webauthn-start", { credentialId: signup.credentialId.slice(0, 18) });
       const auth = await assertWebAuthn(challenge, signup.credentialId);
       passkeyLog("onPaidRegister:assert-webauthn-ok");
-      passkeyLog("onPaidRegister:register-paid-post");
+      const stored = findPasskey(signup.credentialId);
+      const qx = stored?.qx ?? signup.qx;
+      const qy = stored?.qy ?? signup.qy;
+      if (!qx || !qy) {
+        throw new Error("Passkey coordinates missing — remove this stored login and sign up again");
+      }
+      passkeyLog("onPaidRegister:register-paid-post", { qx: qx.slice(0, 12), qy: qy.slice(0, 12) });
       await registerPaid({
         invoiceId: signup.invoiceId,
         credentialId: signup.credentialId,
-        qx: signup.qx,
-        qy: signup.qy,
+        qx,
+        qy,
         dekPublic,
         wrappedDek,
         auth,

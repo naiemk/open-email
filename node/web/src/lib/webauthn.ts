@@ -160,16 +160,34 @@ export async function assertWebAuthn(
     const assertion = cred.response as AuthenticatorAssertionResponse;
     const clientDataJSON = new TextDecoder().decode(assertion.clientDataJSON);
     const { r, s } = parseEcdsaDer(new Uint8Array(assertion.signature));
-    passkeyLog("assertWebAuthn:done", { credentialId: bytesToHex(new Uint8Array(cred.rawId)).slice(0, 18) });
+    const { challengeIndex, typeIndex } = clientDataJsonIndices(clientDataJSON);
+    passkeyLog("assertWebAuthn:done", {
+      credentialId: bytesToHex(new Uint8Array(cred.rawId)).slice(0, 18),
+      challengeIndex,
+      typeIndex,
+    });
     return {
       r: bytesToHex(r),
       s: bytesToHex(s),
-      challengeIndex: clientDataJSON.indexOf('"challenge"'),
-      typeIndex: clientDataJSON.indexOf('"type"'),
+      challengeIndex,
+      typeIndex,
       authenticatorData: bytesToHex(new Uint8Array(assertion.authenticatorData)),
       clientDataJSON,
     };
   });
+}
+
+/** Indices for OpenZeppelin WebAuthn.verify — must point at `"type"` / `"challenge"` keys. */
+export function clientDataJsonIndices(clientDataJSON: string): { challengeIndex: number; typeIndex: number } {
+  const typeIndex = clientDataJSON.indexOf('"type"');
+  const challengeIndex = clientDataJSON.indexOf('"challenge"');
+  if (typeIndex < 0 || challengeIndex < 0) {
+    passkeyLogError("clientDataJsonIndices:bad-json", new Error("missing fields"), {
+      clientDataJSON: clientDataJSON.slice(0, 120),
+    });
+    throw new Error("Passkey returned invalid client data");
+  }
+  return { challengeIndex, typeIndex };
 }
 
 export function encodeRecovery(kek: Uint8Array, wrap: Uint8Array): string {
