@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Hex } from "viem";
 import { signDkim, type DkimKey } from "./dkim.ts";
 import { sendSmtp } from "./smtpSend.ts";
+import { buildRfc822, type OutboundAttachment } from "./mime-build.ts";
 
 export type SendConfig = {
   turnstile: { verify: (token: string) => Promise<boolean> };
@@ -38,17 +39,17 @@ export function buildSignedMessage(input: {
   to: string;
   subject: string;
   body: string;
+  attachments?: OutboundAttachment[];
   dkim: DkimKey;
   t?: number;
 }): string {
-  const rfc5322 = [
-    `From: ${input.mailFrom}`,
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
-    "",
-    input.body,
-    "",
-  ].join("\r\n");
+  const rfc5322 = buildRfc822({
+    mailFrom: input.mailFrom,
+    to: input.to,
+    subject: input.subject,
+    body: input.body,
+    attachments: input.attachments,
+  });
   return signDkim(rfc5322, input.dkim, input.t);
 }
 
@@ -72,6 +73,7 @@ export async function handleSend(
     subject?: string;
     body?: string;
     turnstile?: string;
+    attachments?: OutboundAttachment[];
   };
   if (!(await opts.send.turnstile.verify(body.turnstile ?? ""))) {
     json(res, 403, { error: "turnstile" });
@@ -97,6 +99,7 @@ export async function handleSend(
     to,
     subject: body.subject ?? "",
     body: body.body ?? "",
+    attachments: body.attachments,
     dkim: opts.send.dkim,
     t: Math.floor((opts.send.now?.() ?? Date.now()) / 1000),
   });

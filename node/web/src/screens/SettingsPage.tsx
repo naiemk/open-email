@@ -11,10 +11,11 @@ type Props = {
   onBack: () => void;
   onLogout: () => void;
   onOptToggle: () => void;
+  optPending?: boolean;
   onSessionUpdate: (patch: Partial<Session>) => void;
 };
 
-export function SettingsPage({ meta, session, storage, onBack, onLogout, onOptToggle }: Props) {
+export function SettingsPage({ meta, session, storage, onBack, onLogout, onOptToggle, optPending = false }: Props) {
   const [pairQrOpen, setPairQrOpen] = useState(false);
   const pct = storage.cap ? Math.round((storage.total_size / storage.cap) * 100) : 0;
 
@@ -42,8 +43,8 @@ export function SettingsPage({ meta, session, storage, onBack, onLogout, onOptTo
             <p className="mt-1 text-sm text-muted-foreground">
               Opted in: <strong>{session.optedIn ? "yes" : "no"}</strong>
             </p>
-            <Button className="mt-3" onClick={onOptToggle}>
-              {session.optedIn ? "Opt out" : "Opt in"}
+            <Button className="mt-3" disabled={optPending} onClick={onOptToggle}>
+              {optPending ? "Working…" : session.optedIn ? "Opt out" : "Opt in"}
             </Button>
           </section>
           <section className="rounded-xl border border-border bg-white p-5">

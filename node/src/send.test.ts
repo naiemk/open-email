@@ -137,6 +137,25 @@ describe("send to the internet", () => {
     expect(plaintext).toContain("See you at 1.");
   });
 
+  it("sends multipart mail with an attachment", async () => {
+    outbound.length = 0;
+    const res = await fetch(`${nodeA.url}/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "alice",
+        to: "pat@gmail.com",
+        subject: "With file",
+        body: "See attached",
+        attachments: [{ filename: "note.txt", mimeType: "text/plain", contentBase64: "aGk=" }],
+        turnstile: "ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(outbound.at(-1)?.data).toContain("multipart/mixed");
+    expect(outbound.at(-1)?.data).toContain('filename="note.txt"');
+  });
+
   it("submits SMTP-out for an opted-in name to an internet recipient", async () => {
     outbound.length = 0;
     const sent = await sendSmtp({
@@ -163,7 +182,7 @@ describe("send to the internet", () => {
   });
 
   it("rate-limits send at 20/hour (429) and SMTP-out with 452", async () => {
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 17; i++) {
       const res = await fetch(`${nodeA.url}/send`, {
         method: "POST",
         headers: { "content-type": "application/json" },

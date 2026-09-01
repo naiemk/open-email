@@ -4,6 +4,7 @@ type Props = {
   open: boolean;
   optedIn: boolean;
   storage: { total_size: number; cap: number };
+  optPending?: boolean;
   onClose: () => void;
   onOptToggle: () => void;
   onAddDevice: () => void;
@@ -15,6 +16,7 @@ export function SettingsDrawer({
   open,
   optedIn,
   storage,
+  optPending = false,
   onClose,
   onOptToggle,
   onAddDevice,
@@ -44,8 +46,8 @@ export function SettingsDrawer({
             <p className="mt-1 text-muted-foreground">
               Opted in: <strong>{optedIn ? "yes" : "no"}</strong>
             </p>
-            <Button variant="outline" className="mt-3 w-full" onClick={onOptToggle}>
-              {optedIn ? "Opt out of this node" : "Opt in to this node"}
+            <Button variant="outline" className="mt-3 w-full" disabled={optPending} onClick={onOptToggle}>
+              {optPending ? "Working…" : optedIn ? "Opt out of this node" : "Opt in to this node"}
             </Button>
           </div>
           <div className="rounded-lg border border-border p-4 text-sm">

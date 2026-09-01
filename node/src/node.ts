@@ -1,4 +1,7 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SMTPServer } from "smtp-server";
 import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
@@ -10,6 +13,7 @@ import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
 import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
+import { createMailboxStateStore, type MailboxStateStore } from "./mailbox-state.ts";
 import { serveUiAsset, uiDistExists } from "./ui-static.ts";
 
 export type NodeConfig = {
@@ -49,10 +53,10 @@ export type RunningNode = {
 };
 
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
-  const dataDir = config.dataDir ?? "/data";
+  const dataDir = config.dataDir ?? mkdtempSync(join(tmpdir(), "open-email-node-"));
   const credentialWraps = createCredentialWrapStore(`${dataDir}/credential-wraps.json`);
   const pair = createPairStore();
-  const trashByName = new Map<string, Set<number>>();
+  const mailboxState = createMailboxStateStore(`${dataDir}/mailbox-state.json`);
   const sendHits = createHitWindow();
   const optHits = createHitWindow();
   const now = () => config.send?.now?.() ?? Date.now();
@@ -150,7 +154,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, credentialWraps, pair, trashByName, takeSendSlot, takeOptSlot);
+    void handleHttp(req, res, config, credentialWraps, pair, mailboxState, takeSendSlot, takeOptSlot);
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, config.bindHost ?? "127.0.0.1", () => {
@@ -224,7 +228,7 @@ async function handleHttp(
   config: NodeConfig,
   credentialWraps: CredentialWrapStore,
   pair: PairStore,
-  trashByName: Map<string, Set<number>>,
+  mailboxState: MailboxStateStore,
   takeSendSlot: (name: string) => boolean,
   takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
@@ -299,10 +303,9 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      const trashed = trashByName.get(name) ?? new Set();
       const newestFirst = [...config.index.list(name)]
         .reverse()
-        .map((row) => ({ ...row, trashed: trashed.has(row.seq) }));
+        .map((row) => mailboxState.mergeRow(name, row));
       const before = Number(url.searchParams.get("before") ?? "");
       const limitRaw = Number(url.searchParams.get("limit") ?? 100);
       const limit = Math.min(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 100, 100);
@@ -311,6 +314,38 @@ async function handleHttp(
         limit,
       );
       json(res, 200, page);
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/mail-labels/")) {
+      const name = decodeURIComponent(url.pathname.slice("/mail-labels/".length));
+      json(res, 200, { labels: mailboxState.listLabels(name) });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/mail-state/")) {
+      const name = decodeURIComponent(url.pathname.slice("/mail-state/".length));
+      const raw = await readBody(req);
+      const body = JSON.parse(raw.toString("utf8") || "{}") as {
+        updates?: Array<{ seq: number } & Record<string, unknown>>;
+      };
+      const updates = body.updates ?? [];
+      if (!updates.length) {
+        json(res, 400, { error: "invalid" });
+        return;
+      }
+      mailboxState.patch(
+        name,
+        updates.map((u) => ({
+          seq: u.seq,
+          read: u.read as boolean | undefined,
+          starred: u.starred as boolean | undefined,
+          archived: u.archived as boolean | undefined,
+          spam: u.spam as boolean | undefined,
+          trashed: u.trashed as boolean | undefined,
+          labels: u.labels as string[] | undefined,
+          snoozeUntil: u.snoozeUntil as number | undefined,
+        })),
+      );
+      json(res, 200, { ok: true });
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
@@ -328,17 +363,24 @@ async function handleHttp(
       const slash = rest.lastIndexOf("/");
       const name = decodeURIComponent(rest.slice(0, slash));
       const seq = Number(rest.slice(slash + 1));
-      const set = trashByName.get(name) ?? new Set();
-      set.add(seq);
-      trashByName.set(name, set);
+      mailboxState.trash(name, seq);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/restore/")) {
+      const rest = url.pathname.slice("/restore/".length);
+      const slash = rest.lastIndexOf("/");
+      const name = decodeURIComponent(rest.slice(0, slash));
+      const seq = Number(rest.slice(slash + 1));
+      mailboxState.restore(name, seq);
       json(res, 200, { ok: true });
       return;
     }
     if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
       const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
-      const seqs = [...(trashByName.get(name) ?? new Set())];
+      const seqs = mailboxState.trashedSeqs(name);
       const cids = config.index.remove(name, seqs);
-      trashByName.delete(name);
+      mailboxState.clearTrashFlags(name, seqs);
       for (const cid of cids) config.blobs.unpin(cid);
       json(res, 200, { ok: true });
       return;
