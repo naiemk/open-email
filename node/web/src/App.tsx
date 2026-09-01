@@ -40,6 +40,11 @@ import {
   loadSignupDraftByInvoice,
   saveSignupDraft,
 } from "@/lib/signup-draft";
+import {
+  clearPendingRecovery,
+  loadPendingRecovery,
+  savePendingRecovery,
+} from "@/lib/pending-recovery";
 import { seedMockPasskey } from "@/lib/webauthn-mock";
 import { LandingPage } from "@/screens/LandingPage";
 import { InboxPage } from "@/screens/InboxPage";
@@ -109,11 +114,56 @@ export default function App() {
     const params = new URLSearchParams(location.search);
     if (params.get("pair")) setPairScanOpen(true);
     const signupId = params.get("signup");
+    const recoveryId = params.get("recovery");
     const paid = params.get("paid") === "1";
-    if (signupId) {
+    if (recoveryId) {
+      resumeRecovery(recoveryId);
+    } else if (signupId) {
       void resumeFromInvoice(signupId, paid);
     }
   }, []);
+
+  /** Reload after on-chain register so opt-in assert is the only WebAuthn call on this page. */
+  const redirectToRecovery = (input: {
+    invoiceId: string;
+    recovery: string;
+    name: string;
+    oeId: string;
+    credentialId: Hex;
+    dekPrivate: Uint8Array;
+  }) => {
+    savePendingRecovery({
+      invoiceId: input.invoiceId,
+      recovery: input.recovery,
+      name: input.name,
+      oeId: input.oeId,
+      credentialId: input.credentialId,
+      dekPrivateHex: bytesToHex(input.dekPrivate),
+    });
+    passkeyLog("redirectToRecovery", { oeId: input.oeId, invoiceId: input.invoiceId });
+    location.assign(`${location.pathname}?recovery=${encodeURIComponent(input.invoiceId)}`);
+  };
+
+  const resumeRecovery = (invoiceId: string) => {
+    const pending = loadPendingRecovery(invoiceId);
+    const draft = loadSignupDraftByInvoice(invoiceId);
+    if (!pending || !draft) {
+      passkeyLog("resumeRecovery:missing", { invoiceId, hasPending: !!pending, hasDraft: !!draft });
+      return;
+    }
+    setSignup(draft);
+    setRecovery(pending.recovery);
+    setPendingSession({
+      name: pending.name,
+      oeId: pending.oeId,
+      credentialId: pending.credentialId,
+      dekPrivate: hexToBytes(pending.dekPrivateHex),
+      optedIn: false,
+    });
+    setPhase("recovery");
+    passkeyLog("resumeRecovery", { oeId: pending.oeId, invoiceId });
+    history.replaceState({}, "", location.pathname);
+  };
 
   /** Full navigation clears the browser WebAuthn slot before a later register/assert. */
   const redirectToSignup = (draft: SignupState) => {
@@ -411,16 +461,14 @@ export default function App() {
       });
       const recoveryKek = crypto.getRandomValues(new Uint8Array(32));
       const recoveryWrap = wrapDek(dek.privateKey, recoveryKek);
-      setRecovery(encodeRecovery(recoveryKek, recoveryWrap));
-      setPendingSession({
+      redirectToRecovery({
+        invoiceId: signup.invoiceId,
+        recovery: encodeRecovery(recoveryKek, recoveryWrap),
         name,
         oeId: signup.oeId,
         credentialId: signup.credentialId,
         dekPrivate: dek.privateKey,
-        optedIn: false,
       });
-      setPhase("recovery");
-      passkeyLog("onPaidRegister:recovery-phase");
     });
 
   const onRecoverySaved = () =>
@@ -434,6 +482,7 @@ export default function App() {
       const auth = await assertWebAuthn(challenge, signup.credentialId);
       passkeyLog("onRecoverySaved:assert-webauthn-ok");
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });
+      clearPendingRecovery();
       setSession({ ...pendingSession, optedIn: true });
       setPendingSession(null);
       clearSignupDraft(signup.credentialId);
@@ -445,6 +494,7 @@ export default function App() {
   const logout = () => {
     passkeyLog("logout");
     abortPasskeyCeremony();
+    clearPendingRecovery();
     setSession(null);
     setPendingSession(null);
     setSignup(null);
@@ -508,6 +558,7 @@ export default function App() {
       <RecoveryModal
         open={phase === "recovery"}
         secret={recovery}
+        error={error}
         onSaved={onRecoverySaved}
         busy={busy}
       />

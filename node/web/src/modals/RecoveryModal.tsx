@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 type Props = {
   open: boolean;
   secret: string;
+  error?: string;
   busy: boolean;
   onSaved: () => void;
 };
 
-export function RecoveryModal({ open, secret, busy, onSaved }: Props) {
+export function RecoveryModal({ open, secret, error, busy, onSaved }: Props) {
   const lock = useRef(false);
   if (!busy) lock.current = false;
 
@@ -25,6 +26,7 @@ export function RecoveryModal({ open, secret, busy, onSaved }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <pre className="overflow-auto rounded-lg bg-accent p-4 text-xs text-accent-foreground">{secret}</pre>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <Button
             className="w-full"
             disabled={busy}
