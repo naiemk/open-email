@@ -28,7 +28,9 @@ export async function createInvoice(input: {
   credentialId: Hex;
   oeId: string;
   turnstile: string;
-}): Promise<{ id: string; payLink: string; status: string }> {
+  qx?: Hex;
+  qy?: Hex;
+}): Promise<{ id: string; payLink: string; status: string; qx?: Hex; qy?: Hex }> {
   return apiJson("/signup/invoice", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -46,11 +48,20 @@ export async function fetchOpenSignup(credentialId: Hex): Promise<{
   payLink: string;
   status: string;
   oeId: string;
+  qx?: Hex;
+  qy?: Hex;
 } | null> {
   const res = await fetch(`/signup/open?credentialId=${encodeURIComponent(credentialId)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as { id: string; payLink: string; status: string; oeId: string };
+  return (await res.json()) as {
+    id: string;
+    payLink: string;
+    status: string;
+    oeId: string;
+    qx?: Hex;
+    qy?: Hex;
+  };
 }
 
 export async function markInvoicePaid(id: string): Promise<void> {

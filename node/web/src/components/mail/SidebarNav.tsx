@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import type { Mail } from "@/lib/mail";
 
@@ -26,7 +27,10 @@ export function SidebarNav({
 }: Props) {
   return (
     <nav className="flex h-full w-[220px] shrink-0 flex-col bg-[#1b1330] px-3 py-4 text-[#e9e4ff]">
-      <div className="mb-4 px-2 text-sm font-bold tracking-wide">{domain}</div>
+      <div className="mb-4 flex items-center gap-2 px-2">
+        <BrandMark size={24} />
+        <span className="text-sm font-bold tracking-wide">{domain}</span>
+      </div>
       <Button className="mb-4 w-full justify-center rounded-full bg-primary py-2.5" onClick={onCompose}>
         New message
       </Button>

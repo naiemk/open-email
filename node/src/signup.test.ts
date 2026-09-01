@@ -270,6 +270,16 @@ describe("paid signup through the node", () => {
       payLink: `/pay?id=${invoice.id}`,
     });
     expect((await fetch(`${nodeA.url}/signup/open?credentialId=nobody`)).status).toBe(404);
+
+    // Case-insensitive credential lookup after node would have lost in-memory state
+    // is covered by recreate: same credential creates/resumes invoice for payment.
+    const again = await fetch(`${nodeA.url}/signup/invoice`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credentialId: "CRED-OPEN", oeId: "opener", turnstile: "ok" }),
+    });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { id: string }).id).toBe(invoice.id);
   });
 
   it("hosts fake checkout and same-origin relayer challenges, not /nodes", async () => {

@@ -14,10 +14,12 @@ export type SignupInvoice = {
   status: "awaiting_payment" | "paid" | "cancelled";
   commerceId?: string;
   commercePayLink?: string;
+  qx?: Hex;
+  qy?: Hex;
 };
 
 export type InvoiceBook = {
-  create: (input: { credentialId: string; oeId: string }) => SignupInvoice;
+  create: (input: { credentialId: string; oeId: string; qx?: Hex; qy?: Hex }) => SignupInvoice;
   get: (id: string) => SignupInvoice | undefined;
   getOpenForCredential: (credentialId: string) => SignupInvoice | undefined;
   markPaid: (id: string) => void;
@@ -49,26 +51,36 @@ export function createMemoryInvoices(): InvoiceBook {
   const byCred = new Map<string, string>();
   let n = 0;
   return {
-    create({ credentialId, oeId }) {
-      const open = byCred.get(credentialId);
+    create({ credentialId, oeId, qx, qy }) {
+      const cred = credentialId.toLowerCase();
+      const open = byCred.get(cred);
       if (open) {
         const existing = byId.get(open);
         if (existing && existing.status === "awaiting_payment") {
           existing.oeId = oeId;
+          if (qx) existing.qx = qx;
+          if (qy) existing.qy = qy;
           return existing;
         }
       }
       const id = `inv-${++n}`;
-      const invoice: SignupInvoice = { id, credentialId, oeId, status: "awaiting_payment" };
+      const invoice: SignupInvoice = {
+        id,
+        credentialId: cred,
+        oeId,
+        status: "awaiting_payment",
+        qx,
+        qy,
+      };
       byId.set(id, invoice);
-      byCred.set(credentialId, id);
+      byCred.set(cred, id);
       return invoice;
     },
     get(id) {
       return byId.get(id);
     },
     getOpenForCredential(credentialId) {
-      const id = byCred.get(credentialId);
+      const id = byCred.get(credentialId.toLowerCase());
       if (!id) return undefined;
       const invoice = byId.get(id);
       if (!invoice || invoice.status !== "awaiting_payment") return undefined;
@@ -115,6 +127,8 @@ export async function handleSignup(
       credentialId?: string;
       oeId?: string;
       turnstile?: string;
+      qx?: Hex;
+      qy?: Hex;
     };
     if (!(await signup.turnstile.verify(body.turnstile ?? ""))) {
       json(res, 403, { error: "turnstile" });
@@ -126,7 +140,12 @@ export async function handleSignup(
       json(res, 400, { error: "invalid" });
       return true;
     }
-    const invoice = signup.invoices.create({ credentialId, oeId });
+    const invoice = signup.invoices.create({
+      credentialId,
+      oeId,
+      qx: body.qx,
+      qy: body.qy,
+    });
     let payLink = invoice.commercePayLink ?? `/pay?id=${invoice.id}`;
     if (signup.commerce && !signup.fakeCheckout && !invoice.commerceId) {
       try {
@@ -146,6 +165,8 @@ export async function handleSignup(
       status: invoice.status,
       oeId: invoice.oeId,
       payLink,
+      qx: invoice.qx,
+      qy: invoice.qy,
     });
     return true;
   }
@@ -162,6 +183,8 @@ export async function handleSignup(
       status: invoice.status,
       oeId: invoice.oeId,
       payLink: invoice.commercePayLink ?? `/pay?id=${invoice.id}`,
+      qx: invoice.qx,
+      qy: invoice.qy,
     });
     return true;
   }
@@ -207,7 +230,7 @@ export async function handleSignup(
     const id = decodeURIComponent(url.pathname.slice("/signup/invoice/".length, -"/cancel".length));
     const body = (await readJson(req)) as { credentialId?: string };
     const invoice = signup.invoices.get(id);
-    if (!invoice || invoice.credentialId !== (body.credentialId ?? "").trim()) {
+    if (!invoice || !sameCredential(invoice.credentialId, body.credentialId)) {
       json(res, 403, { error: "credential" });
       return true;
     }
@@ -220,9 +243,10 @@ export async function handleSignup(
     return true;
   }
 
+  // Temporary test helper: mark invoice paid without Trustless Commerce.
+  // Remove when real payments are the only path.
   if (
     req.method === "POST" &&
-    signup.fakeCheckout &&
     url.pathname.startsWith("/signup/invoice/") &&
     url.pathname.endsWith("/pay")
   ) {
@@ -306,7 +330,7 @@ export async function handleSignup(
     const body = (await readJson(req)) as { invoiceId?: string; credentialId?: string; oeId?: string };
     const invoice = signup.invoices.get(body.invoiceId ?? "");
     const oeId = (body.oeId ?? "").trim();
-    if (!invoice || invoice.credentialId !== (body.credentialId ?? "").trim()) {
+    if (!invoice || !sameCredential(invoice.credentialId, body.credentialId)) {
       json(res, 403, { error: "credential" });
       return true;
     }
@@ -332,13 +356,17 @@ function isOeId(oeId: string): boolean {
   return oeId.length >= MIN_OE_ID_LENGTH && !oeId.includes(".");
 }
 
+function sameCredential(a: string, b: string | undefined): boolean {
+  return a.toLowerCase() === (b ?? "").trim().toLowerCase();
+}
+
 function paidForCredential(
   signup: SignupConfig,
   invoiceId: string | undefined,
   credentialId: string | undefined,
 ): SignupInvoice | { status: 403 | 402; error: string } {
   const invoice = signup.invoices.get(invoiceId ?? "");
-  if (!invoice || invoice.credentialId !== (credentialId ?? "").trim()) {
+  if (!invoice || !sameCredential(invoice.credentialId, credentialId)) {
     return { status: 403, error: "credential" };
   }
   if (invoice.status !== "paid") {
