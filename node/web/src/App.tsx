@@ -136,7 +136,7 @@ export default function App() {
   }, [signup]);
 
   useEffect(() => {
-    if (!meta?.turnstileSiteKey || meta.fakeCheckout || !turnstileRef.current) return;
+    if (!meta?.turnstileSiteKey || meta.fakeCheckout || meta.disableTurnstile || !turnstileRef.current) return;
     const api = (window as unknown as { turnstile?: { render: (el: HTMLElement, o: object) => void } }).turnstile;
     if (!api) return;
     api.render(turnstileRef.current, {
@@ -146,7 +146,7 @@ export default function App() {
   }, [meta]);
 
   const turnstile = () => {
-    if (meta?.fakeCheckout) return "ok";
+    if (meta?.fakeCheckout || meta.disableTurnstile) return "ok";
     if (!turnstileToken) throw new Error("Complete the Turnstile check");
     return turnstileToken;
   };

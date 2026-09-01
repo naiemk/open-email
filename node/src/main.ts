@@ -8,7 +8,7 @@ import { loadDotenv } from "../../relayer/src/env.ts";
 import { startNode } from "./node.ts";
 import { createMemoryInvoices } from "./signup.ts";
 import { deliverViaMx } from "./send.ts";
-import { verifyTurnstile } from "./turnstile.ts";
+import { createTurnstileVerifier } from "./turnstile.ts";
 
 loadDotenv();
 
@@ -32,6 +32,8 @@ if (!dkimPem.includes("PRIVATE KEY")) {
 }
 
 const turnstileSecret = process.env.TURNSTILE_SECRET ?? "";
+const disableTurnstile = process.env.DISABLE_TURNSTILE === "1";
+const turnstileVerify = createTurnstileVerifier(turnstileSecret, disableTurnstile);
 const blobs = createDiskBlobStore(join(dataDir, "blobs"));
 const index = createMailIndex({
   persistPath: join(dataDir, "index.json"),
@@ -69,12 +71,11 @@ await startNode({
   },
   signup: {
     relayerUrl,
-    turnstile: {
-      verify: (token) => verifyTurnstile(turnstileSecret, token),
-    },
+    turnstile: { verify: turnstileVerify },
     invoices: createMemoryInvoices(),
     fakeCheckout: process.env.FAKE_CHECKOUT === "1",
-    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? "",
+    disableTurnstile,
+    turnstileSiteKey: disableTurnstile ? "" : (process.env.TURNSTILE_SITE_KEY ?? ""),
     commerce: process.env.INVOICE_TO
         ? {
             apiUrl: (process.env.COMMERCE_API_URL ?? "https://testnet.trustless-commerce.com").replace(/\/$/, ""),
@@ -85,9 +86,7 @@ await startNode({
         : undefined,
   },
   send: {
-    turnstile: {
-      verify: (token) => verifyTurnstile(turnstileSecret, token),
-    },
+    turnstile: { verify: turnstileVerify },
     deliver: deliverViaMx,
     dkim: {
       selector: "oe1",

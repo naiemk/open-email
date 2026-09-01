@@ -33,6 +33,7 @@ export type SignupConfig = {
   turnstile: { verify: (token: string) => Promise<boolean> };
   invoices: InvoiceBook;
   fakeCheckout?: boolean;
+  disableTurnstile?: boolean;
   turnstileSiteKey?: string;
   commerce?: CommerceConfig;
 };
