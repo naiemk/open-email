@@ -15,6 +15,8 @@ export default defineConfig({
       "node/**/*.test.ts",
       "node/web/**/*.test.ts",
       "dal/**/*.test.ts",
+      "shared/**/*.test.ts",
+      "shared/**/*.test.ts",
     ],
     fileParallelism: false,
     testTimeout: process.env.RUN_L2_TESTS ? 180_000 : 60_000,
