@@ -17,6 +17,7 @@ type Props = {
   onConnect: () => void;
   onConnectStored: (credentialId: string, oeId: string) => void;
   onAddDevice: () => void;
+  onOpenExisting: (oeId: string) => void;
   onDemoSignIn?: () => void;
 };
 
@@ -30,6 +31,7 @@ export function LandingPage({
   onConnect,
   onConnectStored,
   onAddDevice,
+  onOpenExisting,
   onDemoSignIn,
 }: Props) {
   const [oeId, setOeId] = useState("");
@@ -38,15 +40,15 @@ export function LandingPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f1fb] to-[#ebe6f5]">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 md:px-6 md:py-6">
         <div className="flex items-center gap-2.5">
           <BrandMark size={32} />
           <div className="text-lg font-bold text-accent">{meta.domain}</div>
         </div>
       </header>
-      <main className="mx-auto grid max-w-5xl gap-8 px-6 pb-16 md:grid-cols-[1.1fr_0.9fr]">
+      <main className="mx-auto grid max-w-5xl gap-8 px-4 pb-16 md:grid-cols-[1.1fr_0.9fr] md:px-6">
         <section>
-          <h1 className="text-3xl font-bold leading-tight text-accent md:text-4xl">
+          <h1 className="text-2xl font-bold leading-tight text-accent sm:text-3xl md:text-4xl">
             Encrypted mail bound to your name, not this server.
           </h1>
           <p className="mt-4 max-w-xl text-muted-foreground">
@@ -63,7 +65,7 @@ export function LandingPage({
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div>
                 <Label htmlFor="oe-id">OE id</Label>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Input
                     id="oe-id"
                     value={oeId}
@@ -71,14 +73,23 @@ export function LandingPage({
                     placeholder="alice"
                     autoComplete="off"
                     spellCheck={false}
+                    className="min-h-11"
                   />
-                  <span className="whitespace-nowrap text-sm font-semibold text-primary">@{meta.domain}</span>
+                  <span className="whitespace-nowrap text-sm font-semibold text-primary sm:shrink-0">@{meta.domain}</span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{preview}</p>
               </div>
               {turnstileSlot}
-              <Button className="w-full" disabled={busy || !oeId.trim()} onClick={() => onSignUp(oeId.trim())}>
+              <Button className="min-h-11 w-full" disabled={busy || !oeId.trim()} onClick={() => onSignUp(oeId.trim())}>
                 Sign up with passkey
+              </Button>
+              <Button
+                variant="secondary"
+                className="min-h-11 w-full"
+                disabled={busy || !oeId.trim()}
+                onClick={() => onOpenExisting(oeId.trim())}
+              >
+                Open existing mailbox
               </Button>
               {passkeys.length === 0 ? null : (
                 <p className="text-center text-xs text-muted-foreground">or use a passkey you already created here</p>

@@ -6,6 +6,8 @@ import { optedIn as fetchOptedIn } from "@/lib/api";
 import { assertWebAuthn } from "@/lib/webauthn";
 import { PENDING_OPTIN_KEY, saveStoredSession } from "@/lib/session-store";
 import { usePendingAction } from "@/lib/use-pending-action";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { cn } from "@/lib/utils";
 import {
   decryptRows,
   downloadEml,
@@ -17,6 +19,7 @@ import {
   isUnread,
   patchMailState,
   quoteForReply,
+  replySubject,
   restoreMail,
   type ComposeAttachment,
   type Mail,
@@ -31,6 +34,9 @@ import { LabelPicker } from "@/components/mail/LabelPicker";
 import { MailDetailsModal, MailHeadersModal } from "@/components/mail/MailDetailsModal";
 import { SettingsDrawer } from "@/components/mail/SettingsDrawer";
 import { SettingsPage } from "@/screens/SettingsPage";
+import { ComposeFab } from "@/components/mobile/ComposeFab";
+import { MobileMailHeader } from "@/components/mobile/MobileMailHeader";
+import { NavDrawer } from "@/components/mobile/NavDrawer";
 
 type Props = {
   meta: Meta;
@@ -79,6 +85,10 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [optInReady, setOptInReady] = useState(
     () => sessionStorage.getItem(PENDING_OPTIN_KEY) === "1" && !session.optedIn,
   );
+  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const [mobilePane, setMobilePane] = useState<"list" | "reader">("list");
+  const [navOpen, setNavOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("optin") === "1") {
@@ -176,12 +186,20 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
 
   const selectMessage = (seq: number) => {
     setSelected(seq);
+    if (isMobile) setMobilePane("reader");
     const mail = mails.find((m) => m.seq === seq);
     if (mail && mail.direction === "in" && !mail.read && !mail.trashed) {
       void patchMailState(session.name, [{ seq, read: true }]).then(() => {
         setMails((prev) => prev.map((m) => (m.seq === seq ? { ...m, read: true } : m)));
       });
     }
+  };
+
+  const changeFolder = (f: Folder) => {
+    setFolder(f);
+    setSelectedSeqs(new Set());
+    setMobilePane("list");
+    setNavOpen(false);
   };
 
   const send = () =>
@@ -298,7 +316,15 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
 
   return (
     <div className="flex h-screen flex-col bg-[#f4f1fb]">
-      <header className="flex items-center justify-between border-b border-border bg-white px-4 py-2">
+      <MobileMailHeader
+        folder={folder}
+        searchOpen={searchOpen}
+        avatarInitial={session.oeId[0]?.toUpperCase() ?? "?"}
+        onMenuOpen={() => setNavOpen(true)}
+        onSearchToggle={() => setSearchOpen((v) => !v)}
+        onSettings={() => setSettingsOpen(true)}
+      />
+      <header className="hidden items-center justify-between border-b border-border bg-white px-4 py-2 md:flex">
         <span className="text-sm font-medium text-muted-foreground">{session.oeId}@{meta.domain}</span>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -343,20 +369,45 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       <div className="flex min-h-0 min-w-0 flex-1">
         <SidebarNav
           domain={meta.domain}
+          oeId={session.oeId}
           folder={folder}
           counts={counts}
           unreadInbox={unreadInbox}
           storagePct={pct}
           refreshPending={isPending("reload")}
-          onFolder={(f) => {
-            setFolder(f);
-            setSelectedSeqs(new Set());
-          }}
+          onFolder={changeFolder}
           onRefresh={() => reload()}
           onCompose={() => openCompose("new")}
           onSettings={() => setSettingsOpen(true)}
           onFullSettings={() => setScreen("settings-full")}
         />
+        <NavDrawer open={navOpen} onClose={() => setNavOpen(false)}>
+          <SidebarNav
+            variant="drawer"
+            domain={meta.domain}
+            oeId={session.oeId}
+            folder={folder}
+            counts={counts}
+            unreadInbox={unreadInbox}
+            storagePct={pct}
+            refreshPending={isPending("reload")}
+            onFolder={changeFolder}
+            onRefresh={() => reload()}
+            onCompose={() => {
+              setNavOpen(false);
+              openCompose("new");
+            }}
+            onSettings={() => {
+              setNavOpen(false);
+              setSettingsOpen(true);
+            }}
+            onFullSettings={() => {
+              setNavOpen(false);
+              setScreen("settings-full");
+            }}
+            onNavigate={() => setNavOpen(false)}
+          />
+        </NavDrawer>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <MailToolbar
             allSelected={allSelected}
@@ -372,58 +423,73 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
             onLabels={() => openLabels(targetSeqs())}
             onSnooze={(until) => patchSeqs(targetSeqs(), { snoozeUntil: until })}
           />
-      <div className="flex min-h-0 min-w-0 flex-1">
-            <MessageList
-              rows={rows}
-              selected={sel?.seq ?? null}
-              selectedSeqs={selectedSeqs}
-              query={query}
-              onQuery={setQuery}
-              onSelect={selectMessage}
-              onToggleSelect={(seq, checked) =>
-                setSelectedSeqs((prev) => {
-                  const next = new Set(prev);
-                  if (checked) next.add(seq);
-                  else next.delete(seq);
-                  return next;
-                })
-              }
-            />
-            <MessageReader
-              mail={sel}
-              folder={folder}
-              pending={isPending("mail")}
-              onMarkRead={(unread) => markRead(!unread, sel ? [sel.seq] : [])}
-              onTrash={() => sel && patchSeqs([sel.seq], { trashed: true })}
-              onRestore={() => {
-                if (!sel) return;
-                void run("mail", async () => {
-                  await restoreMail(session.name, sel.seq);
-                  await reloadCore();
-                });
-              }}
-              onArchive={() => sel && patchSeqs([sel.seq], { archived: true, spam: false })}
-              onSpam={() => sel && patchSeqs([sel.seq], { spam: true, archived: false })}
-              onMoveInbox={() => sel && patchSeqs([sel.seq], { archived: false, spam: false, trashed: false })}
-              onStar={(starred) => sel && patchSeqs([sel.seq], { starred })}
-              onLabels={() => sel && openLabels([sel.seq])}
-              onExport={() => sel && downloadEml(sel.rawRfc822, sel.subject)}
-              onPrint={() => window.print()}
-              onViewDetails={() => setDetailsOpen(true)}
-              onViewHeaders={() => setHeadersOpen(true)}
-              onReportPhishing={() => {
-                if (!sel) return;
-                patchSeqs([sel.seq], { spam: true });
-                setToast("Message moved to spam.");
-                setTimeout(() => setToast(""), 3000);
-              }}
-              onReply={() => sel && openCompose("reply", sel)}
-              onReplyAll={() => sel && openCompose("replyAll", sel)}
-              onForward={() => sel && openCompose("forward", sel)}
-            />
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden md:contents">
+            <div
+              className={cn(
+                "pane-slide flex h-full w-[200%] md:h-auto md:min-h-0 md:w-auto md:flex-1 md:translate-x-0",
+                mobilePane === "reader" ? "-translate-x-1/2" : "translate-x-0",
+              )}
+            >
+              <div className="flex h-full w-1/2 min-w-0 md:h-auto md:w-auto md:flex-none">
+                <MessageList
+                  rows={rows}
+                  selected={sel?.seq ?? null}
+                  selectedSeqs={selectedSeqs}
+                  query={query}
+                  searchOpen={searchOpen}
+                  onQuery={setQuery}
+                  onSelect={selectMessage}
+                  onToggleSelect={(seq, checked) =>
+                    setSelectedSeqs((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(seq);
+                      else next.delete(seq);
+                      return next;
+                    })
+                  }
+                  onStar={(seq, starred) => patchSeqs([seq], { starred })}
+                />
+              </div>
+              <div className="flex h-full w-1/2 min-w-0 md:h-auto md:flex-1">
+                <MessageReader
+                  mail={sel}
+                  folder={folder}
+                  pending={isPending("mail")}
+                  onBack={isMobile ? () => setMobilePane("list") : undefined}
+                  onMarkRead={(unread) => markRead(!unread, sel ? [sel.seq] : [])}
+                  onTrash={() => sel && patchSeqs([sel.seq], { trashed: true })}
+                  onRestore={() => {
+                    if (!sel) return;
+                    void run("mail", async () => {
+                      await restoreMail(session.name, sel.seq);
+                      await reloadCore();
+                    });
+                  }}
+                  onArchive={() => sel && patchSeqs([sel.seq], { archived: true, spam: false })}
+                  onSpam={() => sel && patchSeqs([sel.seq], { spam: true, archived: false })}
+                  onMoveInbox={() => sel && patchSeqs([sel.seq], { archived: false, spam: false, trashed: false })}
+                  onStar={(starred) => sel && patchSeqs([sel.seq], { starred })}
+                  onLabels={() => sel && openLabels([sel.seq])}
+                  onExport={() => sel && downloadEml(sel.rawRfc822, sel.subject)}
+                  onPrint={() => window.print()}
+                  onViewDetails={() => setDetailsOpen(true)}
+                  onViewHeaders={() => setHeadersOpen(true)}
+                  onReportPhishing={() => {
+                    if (!sel) return;
+                    patchSeqs([sel.seq], { spam: true });
+                    setToast("Message moved to spam.");
+                    setTimeout(() => setToast(""), 3000);
+                  }}
+                  onReply={() => sel && openCompose("reply", sel)}
+                  onReplyAll={() => sel && openCompose("replyAll", sel)}
+                  onForward={() => sel && openCompose("forward", sel)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      {!composing ? <ComposeFab disabled={isPending("send")} onClick={() => openCompose("new")} /> : null}
       <ComposeModal
         open={composing}
         mode={composeMode}

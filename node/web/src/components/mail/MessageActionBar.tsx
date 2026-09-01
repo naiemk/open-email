@@ -1,4 +1,3 @@
-import { useState, type ReactNode } from "react";
 import {
   Archive,
   Download,
@@ -14,6 +13,9 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { ActionSheet, type ActionSheetItem } from "@/components/mobile/ActionSheet";
 import { Button } from "@/components/ui/button";
 import type { Mail as MailType } from "@/lib/mail";
 import { hasHtmlBody } from "@/lib/mail";
@@ -39,31 +41,59 @@ type Props = {
   onReportPhishing: () => void;
 };
 
-export function MessageActionBar({
-  mail,
-  folder,
-  pending = false,
-  htmlView = false,
-  onMarkRead,
-  onTrash,
-  onRestore,
-  onArchive,
-  onSpam,
-  onMoveInbox,
-  onStar,
-  onLabels,
-  onExport,
-  onPrint,
-  onViewDetails,
-  onViewHeaders,
-  onViewHtml,
-  onReportPhishing,
-}: Props) {
+export function buildMoreMenuItems(props: Props): ActionSheetItem[] {
+  const { mail, htmlView, onStar, onArchive, onSpam, onExport, onPrint, onViewDetails, onViewHeaders, onViewHtml, onReportPhishing } =
+    props;
+  const items: ActionSheetItem[] = [
+    {
+      label: mail.starred ? "Unstar" : "Star",
+      icon: <Star className="h-4 w-4" />,
+      onClick: () => onStar(!mail.starred),
+    },
+    { label: "Archive", icon: <Archive className="h-4 w-4" />, onClick: onArchive },
+    { label: "Move to spam", icon: <Flame className="h-4 w-4" />, onClick: onSpam },
+    { label: "Export", icon: <Download className="h-4 w-4" />, onClick: onExport },
+    { label: "Print", icon: <Printer className="h-4 w-4" />, onClick: onPrint },
+    { label: "View message details", icon: <FileText className="h-4 w-4" />, onClick: onViewDetails },
+    { label: "View headers", icon: <FileText className="h-4 w-4" />, onClick: onViewHeaders },
+  ];
+  if (hasHtmlBody(mail)) {
+    items.push({
+      label: htmlView ? "View plain text" : "View HTML",
+      icon: <FileText className="h-4 w-4" />,
+      onClick: onViewHtml,
+    });
+  }
+  items.push({
+    label: "Report phishing",
+    className: "text-destructive",
+    onClick: onReportPhishing,
+  });
+  return items;
+}
+
+export function MessageActionBar(props: Props) {
+  const {
+    mail,
+    folder,
+    pending = false,
+    htmlView = false,
+    onMarkRead,
+    onTrash,
+    onRestore,
+    onArchive,
+    onSpam,
+    onMoveInbox,
+    onLabels,
+    onViewHtml,
+    onReportPhishing,
+  } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const unread = mail.direction === "in" && !mail.read;
+  const menuItems = buildMoreMenuItems(props);
 
   return (
-    <div className="flex items-center gap-1 border-b border-border px-4 py-2">
+    <div className="hidden items-center gap-1 border-b border-border px-4 py-2 md:flex">
       <ToolbarIcon disabled={pending} title={unread ? "Mark read" : "Mark unread"} onClick={() => onMarkRead(unread)}>
         {unread ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
       </ToolbarIcon>
@@ -96,21 +126,19 @@ export function MessageActionBar({
           <>
             <button type="button" className="fixed inset-0 z-10" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
             <div className="absolute right-0 top-full z-20 mt-1 min-w-[220px] rounded-md border border-border bg-white py-1 shadow-lg">
-              <MenuItem icon={<Star className="h-4 w-4" />} onClick={() => { onStar(!mail.starred); setMenuOpen(false); }}>
-                {mail.starred ? "Unstar" : "Star"}
-              </MenuItem>
-              <MenuItem icon={<Archive className="h-4 w-4" />} onClick={() => { onArchive(); setMenuOpen(false); }}>Archive</MenuItem>
-              <MenuItem icon={<Flame className="h-4 w-4" />} onClick={() => { onSpam(); setMenuOpen(false); }}>Move to spam</MenuItem>
-              <MenuItem icon={<Download className="h-4 w-4" />} onClick={() => { onExport(); setMenuOpen(false); }}>Export</MenuItem>
-              <MenuItem icon={<Printer className="h-4 w-4" />} onClick={() => { onPrint(); setMenuOpen(false); }}>Print</MenuItem>
-              <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewDetails(); setMenuOpen(false); }}>View message details</MenuItem>
-              <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewHeaders(); setMenuOpen(false); }}>View headers</MenuItem>
-              {hasHtmlBody(mail) ? (
-                <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewHtml(); setMenuOpen(false); }}>
-                  {htmlView ? "View plain text" : "View HTML"}
+              {menuItems.map((item) => (
+                <MenuItem
+                  key={item.label}
+                  icon={item.icon}
+                  className={item.className}
+                  onClick={() => {
+                    item.onClick();
+                    setMenuOpen(false);
+                  }}
+                >
+                  {item.label}
                 </MenuItem>
-              ) : null}
-              <MenuItem className="text-destructive" onClick={() => { onReportPhishing(); setMenuOpen(false); }}>Report phishing</MenuItem>
+              ))}
             </div>
           </>
         ) : null}

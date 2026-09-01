@@ -63,7 +63,7 @@ export function MailToolbar({
   ];
 
   return (
-    <div className="flex items-center gap-1 border-b border-border bg-white px-3 py-2">
+    <div className="hidden items-center gap-1 border-b border-border bg-white px-3 py-2 md:flex">
       <input
         type="checkbox"
         className="h-4 w-4 rounded border-border"

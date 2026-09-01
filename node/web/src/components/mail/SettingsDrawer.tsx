@@ -30,7 +30,7 @@ export function SettingsDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <button type="button" className="absolute inset-0 bg-black/30" aria-label="Close" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-[360px] flex-col bg-white shadow-xl">
+      <aside className="relative z-10 flex h-full w-full max-w-none flex-col bg-white shadow-xl md:w-[360px]">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="font-semibold">Settings</h2>
           <button type="button" className="text-xl" onClick={onClose}>

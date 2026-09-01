@@ -20,19 +20,19 @@ export function SettingsPage({ meta, session, storage, onBack, onLogout, onOptTo
   const pct = storage.cap ? Math.round((storage.total_size / storage.cap) * 100) : 0;
 
   return (
-    <div className="flex min-h-screen bg-[#f4f1fb]">
-      <aside className="w-[240px] shrink-0 bg-[#1b1330] p-4 text-[#e9e4ff]">
+    <div className="flex min-h-screen flex-col bg-[#f4f1fb] md:flex-row">
+      <aside className="shrink-0 border-b border-border bg-[#1b1330] p-4 text-[#e9e4ff] md:w-[240px] md:border-b-0">
         <Button variant="ghost" className="mb-4 w-full justify-start text-[#e9e4ff] hover:bg-white/10" onClick={onBack}>
           ← Inbox
         </Button>
-        <nav className="space-y-1 text-sm">
-          <div className="rounded-lg bg-white/10 px-3 py-2">Account</div>
-          <div className="px-3 py-2 opacity-70">Recovery</div>
-          <div className="px-3 py-2 opacity-70">Security</div>
-          <div className="px-3 py-2 opacity-70">Devices</div>
+        <nav className="flex gap-2 overflow-x-auto text-sm md:block md:space-y-1 md:overflow-visible">
+          <div className="shrink-0 rounded-lg bg-white/10 px-3 py-2 md:shrink">Account</div>
+          <div className="shrink-0 px-3 py-2 opacity-70 md:shrink">Recovery</div>
+          <div className="shrink-0 px-3 py-2 opacity-70 md:shrink">Security</div>
+          <div className="shrink-0 px-3 py-2 opacity-70 md:shrink">Devices</div>
         </nav>
       </aside>
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-4 md:p-8">
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="mt-2 max-w-xl text-muted-foreground">
           Manage opt-in, storage, and device pairing for {session.oeId}@{meta.domain}.
