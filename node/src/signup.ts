@@ -1,19 +1,29 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Hex } from "viem";
+import {
+  commerceStatusPaid,
+  createCommerceInvoice,
+  pollCommerceInvoice,
+  type CommerceConfig,
+} from "./commerce-invoice.ts";
 
 export type SignupInvoice = {
   id: string;
   credentialId: string;
   oeId: string;
   status: "awaiting_payment" | "paid" | "cancelled";
+  commerceId?: string;
+  commercePayLink?: string;
 };
 
 export type InvoiceBook = {
   create: (input: { credentialId: string; oeId: string }) => SignupInvoice;
   get: (id: string) => SignupInvoice | undefined;
+  getOpenForCredential: (credentialId: string) => SignupInvoice | undefined;
   markPaid: (id: string) => void;
   retarget: (id: string, oeId: string) => void;
   cancel: (id: string) => void;
+  attachCommerce: (id: string, commerceId: string, payLink: string) => void;
 };
 
 export type SignupConfig = {
@@ -22,6 +32,7 @@ export type SignupConfig = {
   invoices: InvoiceBook;
   fakeCheckout?: boolean;
   turnstileSiteKey?: string;
+  commerce?: CommerceConfig;
 };
 
 type AuthBody = {
@@ -55,6 +66,19 @@ export function createMemoryInvoices(): InvoiceBook {
     },
     get(id) {
       return byId.get(id);
+    },
+    getOpenForCredential(credentialId) {
+      const id = byCred.get(credentialId);
+      if (!id) return undefined;
+      const invoice = byId.get(id);
+      if (!invoice || invoice.status !== "awaiting_payment") return undefined;
+      return invoice;
+    },
+    attachCommerce(id, commerceId, payLink) {
+      const invoice = byId.get(id);
+      if (!invoice) return;
+      invoice.commerceId = commerceId;
+      invoice.commercePayLink = payLink;
     },
     markPaid(id) {
       const invoice = byId.get(id);
@@ -103,24 +127,80 @@ export async function handleSignup(
       return true;
     }
     const invoice = signup.invoices.create({ credentialId, oeId });
+    let payLink = invoice.commercePayLink ?? `/pay?id=${invoice.id}`;
+    if (signup.commerce && !signup.fakeCheckout && !invoice.commerceId) {
+      try {
+        const commerce = await createCommerceInvoice(signup.commerce, {
+          clientInvoiceId: invoice.id,
+          title: `${oeId}@${signup.commerce.publicUrl.includes("testnet") ? "testnet.crypted.email" : "mailbox"}`,
+        });
+        signup.invoices.attachCommerce(invoice.id, commerce.id, commerce.payLink);
+        payLink = commerce.payLink;
+      } catch (err) {
+        json(res, 502, { error: err instanceof Error ? err.message : "commerce failed" });
+        return true;
+      }
+    }
     json(res, 200, {
       id: invoice.id,
       status: invoice.status,
       oeId: invoice.oeId,
-      payLink: `/pay?id=${invoice.id}`,
+      payLink,
     });
     return true;
   }
 
-  if (req.method === "GET" && url.pathname.startsWith("/signup/invoice/")) {
-    const id = decodeURIComponent(url.pathname.slice("/signup/invoice/".length));
-    const invoice = signup.invoices.get(id);
+  if (req.method === "GET" && url.pathname === "/signup/open") {
+    const credentialId = url.searchParams.get("credentialId") ?? "";
+    const invoice = signup.invoices.getOpenForCredential(credentialId);
     if (!invoice) {
-      json(res, 404, { error: "unknown invoice" });
+      json(res, 404, { error: "no open signup" });
       return true;
     }
-    json(res, 200, { id: invoice.id, status: invoice.status, oeId: invoice.oeId });
+    json(res, 200, {
+      id: invoice.id,
+      status: invoice.status,
+      oeId: invoice.oeId,
+      payLink: invoice.commercePayLink ?? `/pay?id=${invoice.id}`,
+    });
     return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/signup/commerce/webhook") {
+    const body = (await readJson(req)) as {
+      type?: string;
+      invoice?: { id?: string; clientInvoiceId?: string; status?: string };
+    };
+    const clientId = body.invoice?.clientInvoiceId ?? "";
+    const invoice = signup.invoices.get(clientId);
+    if (invoice && commerceStatusPaid(body.invoice?.status ?? "")) {
+      signup.invoices.markPaid(invoice.id);
+    }
+    json(res, 200, { ok: true });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/signup/invoice/")) {
+    const rest = url.pathname.slice("/signup/invoice/".length);
+    if (!rest.includes("/")) {
+      const id = decodeURIComponent(rest);
+      const invoice = signup.invoices.get(id);
+      if (!invoice) {
+        json(res, 404, { error: "unknown invoice" });
+        return true;
+      }
+      if (
+        invoice.status === "awaiting_payment" &&
+        invoice.commerceId &&
+        signup.commerce &&
+        !signup.fakeCheckout
+      ) {
+        const remote = await pollCommerceInvoice(signup.commerce, invoice.commerceId);
+        if (commerceStatusPaid(remote)) signup.invoices.markPaid(invoice.id);
+      }
+      json(res, 200, { id: invoice.id, status: invoice.status, oeId: invoice.oeId });
+      return true;
+    }
   }
 
   if (req.method === "POST" && url.pathname.startsWith("/signup/invoice/") && url.pathname.endsWith("/cancel")) {

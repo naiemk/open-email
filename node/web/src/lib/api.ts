@@ -41,6 +41,22 @@ export async function pollInvoice(id: string): Promise<string> {
   return body.status;
 }
 
+export async function fetchOpenSignup(credentialId: Hex): Promise<{
+  id: string;
+  payLink: string;
+  status: string;
+  oeId: string;
+} | null> {
+  const res = await fetch(`/signup/open?credentialId=${encodeURIComponent(credentialId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as { id: string; payLink: string; status: string; oeId: string };
+}
+
+export async function markInvoicePaid(id: string): Promise<void> {
+  await apiJson(`/signup/invoice/${id}/pay`, { method: "POST" });
+}
+
 export async function registerPaid(input: {
   invoiceId: string;
   credentialId: Hex;

@@ -254,6 +254,24 @@ describe("paid signup through the node", () => {
     expect(c.id).not.toBe(a.id);
   });
 
+  it("exposes open signup by credential id", async () => {
+    const created = await fetch(`${nodeA.url}/signup/invoice`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credentialId: "cred-open", oeId: "opener", turnstile: "ok" }),
+    });
+    const invoice = (await created.json()) as { id: string; oeId: string; payLink: string };
+    const open = await fetch(`${nodeA.url}/signup/open?credentialId=cred-open`);
+    expect(open.status).toBe(200);
+    expect(await open.json()).toEqual({
+      id: invoice.id,
+      status: "awaiting_payment",
+      oeId: "opener",
+      payLink: `/pay?id=${invoice.id}`,
+    });
+    expect((await fetch(`${nodeA.url}/signup/open?credentialId=nobody`)).status).toBe(404);
+  });
+
   it("hosts fake checkout and same-origin relayer challenges, not /nodes", async () => {
     const created = await fetch(`${nodeA.url}/signup/invoice`, {
       method: "POST",
@@ -263,7 +281,7 @@ describe("paid signup through the node", () => {
     const invoice = (await created.json()) as { id: string; payLink: string };
     const payPage = await fetch(`${nodeA.url}${invoice.payLink}`);
     expect(payPage.status).toBe(200);
-    expect(await payPage.text()).toContain("Mark paid");
+    expect(await payPage.text()).toContain("Mark paid (test only)");
     expect((await fetch(`${nodeA.url}/signup/invoice/${invoice.id}/pay`, { method: "POST" })).status).toBe(200);
     const polled = (await (await fetch(`${nodeA.url}/signup/invoice/${invoice.id}`)).json()) as { status: string };
     expect(polled.status).toBe("paid");

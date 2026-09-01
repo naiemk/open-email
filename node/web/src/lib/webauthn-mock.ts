@@ -60,10 +60,13 @@ export async function mockCreatePasskey(oeId: string, domain: string): Promise<P
   return { credentialId, qx: passkey.qx, qy: passkey.qy, kek: MOCK_KEK.slice() };
 }
 
-export async function mockConnectPasskey(): Promise<{ credentialId: Hex; kek: Uint8Array }> {
+export async function mockConnectPasskey(forCredentialId?: Hex): Promise<{ credentialId: Hex; kek: Uint8Array }> {
   const list = load();
   if (list.length === 0) throw new Error("No mock passkeys — sign up or click Demo sign in");
-  const row = list[0]!;
+  const row = forCredentialId
+    ? list.find((p) => p.credentialId.toLowerCase() === forCredentialId.toLowerCase())
+    : list[0];
+  if (!row) throw new Error("Mock passkey not found");
   return { credentialId: row.credentialId, kek: MOCK_KEK.slice() };
 }
 

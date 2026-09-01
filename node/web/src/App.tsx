@@ -20,6 +20,8 @@ import {
   createInvoice,
   fetchMeta,
   fetchMockConfig,
+  fetchOpenSignup,
+  markInvoicePaid,
   optInChallenge,
   optedIn,
   pollInvoice,
@@ -28,6 +30,12 @@ import {
   type Meta,
 } from "@/lib/api";
 import { listPasskeys, rememberPasskey, touchPasskey } from "@/lib/passkeys-store";
+import {
+  clearSignupDraft,
+  loadSignupDraft,
+  loadSignupDraftByInvoice,
+  saveSignupDraft,
+} from "@/lib/signup-draft";
 import { seedMockPasskey } from "@/lib/webauthn-mock";
 import { LandingPage } from "@/screens/LandingPage";
 import { InboxPage } from "@/screens/InboxPage";
@@ -95,7 +103,33 @@ export default function App() {
     })();
     const params = new URLSearchParams(location.search);
     if (params.get("pair")) setPairScanOpen(true);
+    const signupId = params.get("signup");
+    const paid = params.get("paid") === "1";
+    if (signupId) {
+      void resumeFromInvoice(signupId, paid);
+    }
   }, []);
+
+  const resumeFromInvoice = async (invoiceId: string, paidHint: boolean) => {
+    try {
+      const draft = loadSignupDraftByInvoice(invoiceId);
+      if (!draft) return;
+      let status = draft.status;
+      if (paidHint) status = "paid";
+      else status = await pollInvoice(invoiceId);
+      const next = { ...draft, invoiceId, status };
+      setSignup(next);
+      saveSignupDraft(next);
+      setPhase("paying");
+      history.replaceState({}, "", location.pathname);
+    } catch {
+      /* ignore stale redirect */
+    }
+  };
+
+  useEffect(() => {
+    if (signup) saveSignupDraft(signup);
+  }, [signup]);
 
   useEffect(() => {
     if (!meta?.turnstileSiteKey || meta.fakeCheckout || !turnstileRef.current) return;
@@ -129,11 +163,46 @@ export default function App() {
   const signIn = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
     if (!meta) return;
     const name = registryName(oeId, meta.domain);
-    const boot = await bootstrap(name, credentialId);
-    const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
-    const in_ = await optedIn(name, meta.nodeKey);
-    setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
-    setPhase("inbox");
+    try {
+      const boot = await bootstrap(name, credentialId);
+      const dekPrivate = unwrapDek(hexToBytes(boot.wrappedDek), kek);
+      const in_ = await optedIn(name, meta.nodeKey);
+      setSession({ name, oeId, credentialId, dekPrivate, optedIn: in_ });
+      clearSignupDraft(credentialId);
+      setPhase("inbox");
+      return;
+    } catch {
+      /* not registered — try unpaid signup */
+    }
+    await resumeUnpaidSignup(credentialId, oeId, kek);
+  };
+
+  const resumeUnpaidSignup = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
+    const local = loadSignupDraft(credentialId);
+    const remote = await fetchOpenSignup(credentialId);
+    if (!local && !remote) {
+      throw new Error("Mailbox not registered yet — finish signup or check your OE id");
+    }
+    const invoiceId = remote?.id ?? local!.invoiceId;
+    const status = remote ? remote.status : local!.status;
+    const payLink = remote?.payLink ?? local!.payLink;
+    const resolvedOeId = remote?.oeId ?? local?.oeId ?? oeId;
+    if (!local?.qx || !local?.qy) {
+      throw new Error("Signup keys missing locally — use the same browser where you started signup");
+    }
+    const next: SignupState = {
+      oeId: resolvedOeId,
+      credentialId,
+      qx: local.qx,
+      qy: local.qy,
+      kek,
+      invoiceId,
+      payLink,
+      status,
+    };
+    setSignup(next);
+    saveSignupDraft(next);
+    setPhase("paying");
   };
 
   const onSignUp = (oeId: string) =>
@@ -144,6 +213,16 @@ export default function App() {
       rememberPasskey({ credentialId: mat.credentialId, oeId, label: `${oeId}@${meta.domain}`, lastUsed: Date.now() });
       const invoice = await createInvoice({ credentialId: mat.credentialId, oeId, turnstile: turnstile() });
       setSignup({
+        oeId,
+        credentialId: mat.credentialId,
+        qx: mat.qx,
+        qy: mat.qy,
+        kek: mat.kek,
+        invoiceId: invoice.id,
+        payLink: invoice.payLink,
+        status: invoice.status,
+      });
+      saveSignupDraft({
         oeId,
         credentialId: mat.credentialId,
         qx: mat.qx,
@@ -170,10 +249,10 @@ export default function App() {
   const onConnectStored = (credentialId: string, oeId: string) =>
     run(async () => {
       if (!meta) return;
-      const { credentialId: cid, kek } = await connectPasskey();
-      if (cid.toLowerCase() !== credentialId.toLowerCase()) throw new Error("Wrong passkey selected");
+      const cid = credentialId as Hex;
+      const { credentialId: got, kek } = await connectPasskey(cid);
       touchPasskey(credentialId);
-      await signIn(cid, oeId, kek);
+      await signIn(got, oeId, kek);
     });
 
   const onDemoSignIn = () =>
@@ -237,6 +316,7 @@ export default function App() {
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });
       setSession({ ...pendingSession, optedIn: true });
       setPendingSession(null);
+      clearSignupDraft(signup.credentialId);
       setSignup(null);
       setRecovery("");
       setPhase("inbox");
@@ -290,12 +370,20 @@ export default function App() {
         busy={busy}
         onClose={() => {
           setPhase("landing");
-          setSignup(null);
         }}
         onPoll={async () => {
           if (!signup) throw new Error("No signup in progress");
           return pollInvoice(signup.invoiceId);
         }}
+        onMarkPaid={
+          meta.fakeCheckout
+            ? async () => {
+                if (!signup) return;
+                await markInvoicePaid(signup.invoiceId);
+                setSignup({ ...signup, status: "paid" });
+              }
+            : undefined
+        }
         onRegister={onPaidRegister}
         onStatus={(status) => signup && setSignup({ ...signup, status })}
       />

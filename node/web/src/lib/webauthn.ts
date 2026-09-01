@@ -64,18 +64,26 @@ export async function createPasskey(oeId: string, domain: string): Promise<Passk
   return { credentialId: bytesToHex(new Uint8Array(cred.rawId)), qx, qy, kek };
 }
 
-export async function connectPasskey(): Promise<{ credentialId: Hex; kek: Uint8Array }> {
-  if (mockMode) return mock.mockConnectPasskey();
+export async function connectPasskey(forCredentialId?: Hex): Promise<{ credentialId: Hex; kek: Uint8Array }> {
+  if (mockMode) return mock.mockConnectPasskey(forCredentialId);
+  const allowCredentials = forCredentialId
+    ? [{ id: toBufferSource(hexToBytes(forCredentialId)), type: "public-key" as const }]
+    : undefined;
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       rpId: location.hostname,
       userVerification: "required",
+      allowCredentials,
       extensions: { prf: { eval: { first: PRF_SALT } } },
     },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("Passkey cancelled");
-  return { credentialId: bytesToHex(new Uint8Array(cred.rawId)), kek: prfFrom(cred) };
+  const credentialId = bytesToHex(new Uint8Array(cred.rawId));
+  if (forCredentialId && credentialId.toLowerCase() !== forCredentialId.toLowerCase()) {
+    throw new Error("Wrong passkey selected");
+  }
+  return { credentialId, kek: prfFrom(cred) };
 }
 
 export async function assertWebAuthn(
@@ -90,11 +98,15 @@ export async function assertWebAuthn(
   clientDataJSON: string;
 }> {
   if (mockMode) return mock.mockAssertWebAuthn(challenge, credentialId);
+  const allowCredentials = credentialId
+    ? [{ id: toBufferSource(hexToBytes(credentialId)), type: "public-key" as const }]
+    : undefined;
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge: toBufferSource(hexToBytes(challenge)),
       rpId: location.hostname,
       userVerification: "required",
+      allowCredentials,
     },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("Passkey assertion cancelled");
