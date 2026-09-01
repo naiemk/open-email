@@ -36,6 +36,7 @@ import { passkeyLog, passkeyLogError } from "@/lib/passkey-log";
 import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
+  loadLatestOpenSignupDraft,
   loadSignupDraft,
   loadSignupDraftByInvoice,
   saveSignupDraft,
@@ -112,6 +113,13 @@ export default function App() {
     const paid = params.get("paid") === "1";
     if (signupId) {
       void resumeFromInvoice(signupId, paid);
+    } else {
+      const open = loadLatestOpenSignupDraft();
+      if (open) {
+        passkeyLog("boot:resume-open-draft", { oeId: open.oeId, status: open.status, invoiceId: open.invoiceId });
+        setSignup(open);
+        setPhase("paying");
+      }
     }
   }, []);
 
@@ -307,16 +315,6 @@ export default function App() {
         qx: mat.qx,
         qy: mat.qy,
       });
-      setSignup({
-        oeId,
-        credentialId: mat.credentialId,
-        qx: mat.qx,
-        qy: mat.qy,
-        kek: mat.kek,
-        invoiceId: invoice.id,
-        payLink: invoice.payLink,
-        status: invoice.status,
-      });
       saveSignupDraft({
         oeId,
         credentialId: mat.credentialId,
@@ -327,7 +325,9 @@ export default function App() {
         payLink: invoice.payLink,
         status: invoice.status,
       });
-      setPhase("paying");
+      // Reload so register is the only WebAuthn get this session (create already ran).
+      passkeyLog("onSignUp:reload-for-pay", { invoiceId: invoice.id });
+      location.assign(`${location.pathname}?signup=${encodeURIComponent(invoice.id)}`);
     });
 
   const onConnect = () =>
@@ -345,6 +345,18 @@ export default function App() {
     run("onConnectStored", async () => {
       if (!meta) return;
       const cid = credentialId as Hex;
+      const draft = loadSignupDraft(cid);
+      if (draft?.oeId === oeId) {
+        const name = registryName(oeId, meta.domain);
+        try {
+          await bootstrap(name, cid);
+          passkeyLog("onConnectStored:registered-use-connect", { oeId });
+        } catch {
+          passkeyLog("onConnectStored:unpaid-draft-skip-connect", { oeId, invoiceId: draft.invoiceId });
+          await resumeUnpaidSignup(cid, oeId, draft.kek);
+          return;
+        }
+      }
       const { credentialId: got, kek } = await connectPasskey(cid);
       touchPasskey(credentialId);
       await signIn(got, oeId, kek);

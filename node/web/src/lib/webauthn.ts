@@ -143,15 +143,19 @@ export async function assertWebAuthn(
     const allowCredentials = credentialId
       ? [{ id: toBufferSource(hexToBytes(credentialId)), type: "public-key" as const }]
       : undefined;
-    const cred = await browserGet("assertWebAuthn", {
-      publicKey: {
-        challenge: toBufferSource(hexToBytes(challenge)),
-        rpId: location.hostname,
-        userVerification: "required",
-        allowCredentials,
+    const cred = await browserGet(
+      "assertWebAuthn",
+      {
+        publicKey: {
+          challenge: toBufferSource(hexToBytes(challenge)),
+          rpId: location.hostname,
+          userVerification: "required",
+          allowCredentials,
+        },
+        signal,
       },
-      signal,
-    });
+      { clearConditional: true },
+    );
     if (!cred) throw new Error("Passkey assertion cancelled");
     const assertion = cred.response as AuthenticatorAssertionResponse;
     const clientDataJSON = new TextDecoder().decode(assertion.clientDataJSON);
@@ -202,8 +206,16 @@ async function browserCreate(label: string, options: CredentialCreationOptions):
   }
 }
 
-async function browserGet(label: string, options: CredentialRequestOptions): Promise<PublicKeyCredential | null> {
+async function browserGet(
+  label: string,
+  options: CredentialRequestOptions,
+  opts?: { clearConditional?: boolean },
+): Promise<PublicKeyCredential | null> {
   await awaitBrowserSlot(label);
+  if (opts?.clearConditional && typeof PublicKeyCredential.preventSilentAccess === "function") {
+    passkeyLog(`${label}:preventSilentAccess`);
+    await PublicKeyCredential.preventSilentAccess();
+  }
   passkeyLog(`${label}:navigator.credentials.get`, {
     rpId: location.hostname,
     signalAborted: options.signal?.aborted ?? false,

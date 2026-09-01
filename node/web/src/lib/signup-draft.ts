@@ -24,6 +24,13 @@ export function loadSignupDraftByInvoice(invoiceId: string): SignupState | null 
   return { ...row, kek: hexToBytesLocal(row.kekHex) };
 }
 
+/** Most recent signup draft still awaiting payment or on-chain register. */
+export function loadLatestOpenSignupDraft(): SignupState | null {
+  const row = loadAll().find((d) => d.status === "paid" || d.status === "awaiting_payment");
+  if (!row) return null;
+  return { ...row, kek: hexToBytesLocal(row.kekHex) };
+}
+
 export function clearSignupDraft(credentialId: string): void {
   localStorage.setItem(
     KEY,
