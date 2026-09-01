@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasHtmlBody, parseRfc822, wrapHtmlForView } from "./mail.ts";
+import { getHtmlForView, hasHtmlBody, parseRfc822, wrapHtmlForView } from "./mail.ts";
 
 describe("parseRfc822", () => {
   it("parses plain text messages", async () => {
@@ -45,8 +45,10 @@ describe("parseRfc822", () => {
   });
 
   it("detects html bodies", () => {
-    expect(hasHtmlBody({ htmlBody: "<p>Hi</p>" })).toBe(true);
-    expect(hasHtmlBody({ htmlBody: "  " })).toBe(false);
+    expect(hasHtmlBody({ htmlBody: "<p>Hi</p>", body: "" })).toBe(true);
+    expect(hasHtmlBody({ htmlBody: "  ", body: "" })).toBe(false);
+    expect(hasHtmlBody({ htmlBody: "", body: "<table><tr><td>x</td></tr></table>" })).toBe(true);
+    expect(getHtmlForView({ htmlBody: "", body: "<div>Hi</div>" })).toContain("<div");
     expect(wrapHtmlForView("<p>Hi</p>")).toContain("<!DOCTYPE html>");
   });
 });

@@ -117,8 +117,12 @@ export async function parseRfc822(rawRfc822: string): Promise<{
   attachments: MailAttachment[];
 }> {
   const parsed = await PostalMime.parse(rawRfc822);
+  const htmlBody =
+    parsed.html?.trim() ||
+    htmlFromMimeParts(parsed.attachments) ||
+    undefined;
   const attachments: MailAttachment[] = (parsed.attachments ?? [])
-    .filter((att) => !att.mimeType?.toLowerCase().startsWith("text/html"))
+    .filter((att) => !att.mimeType?.toLowerCase().includes("text/html"))
     .map((att, i) => ({
     partId: String(i),
     filename: att.filename || att.mimeType || `attachment-${i + 1}`,
@@ -132,29 +136,58 @@ export async function parseRfc822(rawRfc822: string): Promise<{
     subject: parsed.subject ?? "",
     body: parsed.text ?? "",
     rawRfc822,
-    htmlBody: parsed.html || undefined,
+    htmlBody: htmlBody || undefined,
     attachments,
   };
+}
+
+function htmlFromMimeParts(
+  parts: Array<{ mimeType?: string; content?: Uint8Array | ArrayBuffer | string }> | undefined,
+): string | undefined {
+  for (const part of parts ?? []) {
+    if (!part.mimeType?.toLowerCase().includes("text/html") || !part.content) continue;
+    const bytes =
+      part.content instanceof Uint8Array
+        ? part.content
+        : part.content instanceof ArrayBuffer
+          ? new Uint8Array(part.content)
+          : new TextEncoder().encode(String(part.content));
+    const html = new TextDecoder().decode(bytes).trim();
+    if (html) return html;
+  }
+  return undefined;
+}
+
+function looksLikeHtml(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return /<!doctype html/i.test(t) || /<\s*(html|body|table|div|center|p)\b/i.test(t);
+}
+
+export function getHtmlForView(mail: Pick<Mail, "htmlBody" | "body">): string | undefined {
+  if (mail.htmlBody?.trim()) return mail.htmlBody;
+  if (looksLikeHtml(mail.body)) return mail.body;
+  return undefined;
+}
+
+export function hasHtmlBody(mail: Pick<Mail, "htmlBody" | "body">): boolean {
+  return Boolean(getHtmlForView(mail));
+}
+
+/** Wrap partial HTML fragments in a document that fills the reader width. */
+export function wrapHtmlForView(html: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
+html,body{margin:0;padding:0;width:100%;height:100%;box-sizing:border-box;background:#fff;color:#111;overflow:auto;}
+body{padding:16px;}
+img{max-width:100%!important;height:auto!important;}
+table{max-width:100%!important;}
+</style></head><body>${html}</body></html>`;
 }
 
 function formatAddress(addr: { name?: string; address?: string } | string): string {
   if (typeof addr === "string") return addr;
   if (addr.name && addr.address) return `${addr.name} <${addr.address}>`;
   return addr.address ?? "";
-}
-
-export function hasHtmlBody(mail: Pick<Mail, "htmlBody">): boolean {
-  return Boolean(mail.htmlBody?.trim());
-}
-
-/** Wrap partial HTML fragments in a document that fills the reader width. */
-export function wrapHtmlForView(html: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
-html,body{margin:0;padding:16px;width:100%;box-sizing:border-box;background:#fff;color:#111;}
-body{min-height:100%;}
-img{max-width:100%!important;height:auto!important;}
-table{max-width:100%!important;}
-</style></head><body>${html}</body></html>`;
 }
 
 export function smtpFrom(domain: string, name: string): string {

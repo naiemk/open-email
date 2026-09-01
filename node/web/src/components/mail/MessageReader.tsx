@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Mail } from "@/lib/mail";
-import { hasHtmlBody, wrapHtmlForView } from "@/lib/mail";
+import { getHtmlForView, hasHtmlBody, wrapHtmlForView } from "@/lib/mail";
 import { AttachmentList } from "@/components/mail/AttachmentList";
 import { MessageActionBar } from "@/components/mail/MessageActionBar";
 import { MessageHeaderActions } from "@/components/mail/MessageHeaderActions";
@@ -51,22 +51,11 @@ export function MessageReader({
   onForward,
 }: Props) {
   const [htmlView, setHtmlView] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const bodyHostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!mail) return;
     setHtmlView(hasHtmlBody(mail));
-  }, [mail?.seq]);
-
-  const resizeIframe = () => {
-    const iframe = iframeRef.current;
-    const host = bodyHostRef.current;
-    if (!iframe?.contentDocument || !host) return;
-    const doc = iframe.contentDocument;
-    const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
-    iframe.style.height = `${Math.max(contentHeight, host.clientHeight)}px`;
-  };
+  }, [mail?.seq, mail?.htmlBody, mail?.body]);
 
   if (!mail) {
     return (
@@ -77,9 +66,10 @@ export function MessageReader({
   }
 
   const htmlAvailable = hasHtmlBody(mail);
+  const htmlContent = getHtmlForView(mail);
 
   return (
-    <div className="message-reader flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+    <div className="message-reader flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
       <MessageActionBar
         mail={mail}
         folder={folder}
@@ -148,20 +138,20 @@ export function MessageReader({
           </Button>
         </div>
       ) : null}
-      <div ref={bodyHostRef} className="min-h-0 flex-1 overflow-auto">
-        {htmlView && htmlAvailable ? (
+      <div className="relative min-h-0 flex-1 bg-white">
+        {htmlView && htmlAvailable && htmlContent ? (
           <iframe
-            ref={iframeRef}
             title="HTML message"
-            sandbox=""
-            srcDoc={wrapHtmlForView(mail.htmlBody!)}
-            className="block w-full border-0 bg-white"
-            onLoad={resizeIframe}
+            sandbox="allow-same-origin allow-popups"
+            srcDoc={wrapHtmlForView(htmlContent)}
+            className="absolute inset-0 h-full w-full border-0 bg-white"
           />
         ) : (
-          <pre className="whitespace-pre-wrap px-6 py-4 font-sans text-sm leading-relaxed text-foreground">
-            {mail.body || "(no plain text body)"}
-          </pre>
+          <div className="absolute inset-0 overflow-auto px-6 py-4">
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+              {mail.body || "(no plain text body)"}
+            </pre>
+          </div>
         )}
       </div>
     </div>
