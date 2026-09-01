@@ -1,3 +1,11 @@
+/** When disabled, signup/send accept the dev token `"ok"` without calling Cloudflare. */
+export function createTurnstileVerifier(secret: string, disabled: boolean): (token: string) => Promise<boolean> {
+  return async (token) => {
+    if (disabled) return token === "ok";
+    return verifyTurnstile(secret, token);
+  };
+}
+
 export async function verifyTurnstile(secret: string, token: string): Promise<boolean> {
   if (!secret || !token) return false;
   const body = new URLSearchParams({ secret, response: token });

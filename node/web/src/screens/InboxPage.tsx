@@ -80,7 +80,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         to: composeTo.trim(),
         subject: composeSubject,
         body: composeBody,
-        turnstile: meta.fakeCheckout ? "ok" : "",
+        turnstile: meta.fakeCheckout || meta.disableTurnstile ? "ok" : "",
       }),
     });
     if (!res.ok) {

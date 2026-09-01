@@ -5,6 +5,7 @@ export type Meta = {
   domain: string;
   nodeKey: Hex;
   fakeCheckout: boolean;
+  disableTurnstile?: boolean;
   turnstileSiteKey: string;
   signupPrice: string;
   mockPasskey?: boolean;
