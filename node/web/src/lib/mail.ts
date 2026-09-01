@@ -1,5 +1,5 @@
 import { openEnvelope } from "@client/envelope.ts";
-import type { Hex } from "viem";
+import { apiJson } from "@/lib/api-fetch";
 
 export type IndexRow = {
   seq: number;
@@ -9,23 +9,35 @@ export type IndexRow = {
   time: number;
 };
 
-export type Mail = IndexRow & { from: string; subject: string; body: string };
+export type Mail = IndexRow & { from: string; subject: string; body: string; unread?: boolean };
 
 export async function fetchIndex(name: string, before?: number): Promise<IndexRow[]> {
   const q = before ? `?before=${before}` : "";
-  return (await (await fetch(`/index/${encodeURIComponent(name)}${q}`)).json()) as IndexRow[];
+  return apiJson<IndexRow[]>(`/index/${encodeURIComponent(name)}${q}`);
 }
 
 export async function fetchBlob(name: string, cid: string): Promise<Uint8Array> {
-  return new Uint8Array(await (await fetch(`/blobs/${encodeURIComponent(cid)}?name=${encodeURIComponent(name)}`)).arrayBuffer());
+  const res = await fetch(`/blobs/${encodeURIComponent(cid)}?name=${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Blob ${cid} not found`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export async function decryptRows(name: string, rows: IndexRow[], dekPrivate: Uint8Array): Promise<Mail[]> {
   const mails: Mail[] = [];
   for (const row of rows) {
-    const blob = await fetchBlob(name, row.cid);
-    const raw = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
-    mails.push({ ...row, ...parseRfc822(raw) });
+    try {
+      const blob = await fetchBlob(name, row.cid);
+      const raw = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
+      mails.push({ ...row, ...parseRfc822(raw), unread: row.direction === "in" && !row.trashed });
+    } catch {
+      mails.push({
+        ...row,
+        from: "(decrypt failed)",
+        subject: `Message #${row.seq}`,
+        body: "Could not decrypt this message.",
+        unread: false,
+      });
+    }
   }
   return mails;
 }
@@ -42,4 +54,18 @@ function parseRfc822(raw: string): { from: string; subject: string; body: string
 export function smtpFrom(domain: string, name: string): string {
   const oeId = name.endsWith(".testnet") ? name.slice(0, -".testnet".length) : name;
   return `${oeId}@${domain}`;
+}
+
+export function formatMailDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+export function senderInitial(from: string): string {
+  const name = from.replace(/^.*<([^>]+)>.*$/, "$1").split("@")[0] ?? "?";
+  return (name[0] ?? "?").toUpperCase();
 }
