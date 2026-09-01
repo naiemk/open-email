@@ -5,6 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { passkeyLog } from "@/lib/passkey-log";
+import { useT } from "@/i18n/I18nProvider";
 
 type Props = {
   open: boolean;
@@ -31,6 +32,7 @@ export function PayModal({
   onStatus,
   onMarkPaid,
 }: Props) {
+  const t = useT();
   const [polling, setPolling] = useState(false);
   const registerLock = useRef(false);
 
@@ -85,24 +87,21 @@ export function PayModal({
     <Dialog open={open} onClose={busy ? () => undefined : onClose}>
       <DialogContent>
         <CardHeader>
-          <CardTitle>Activate your mailbox</CardTitle>
+          <CardTitle>{t("pay.activateMailbox")}</CardTitle>
           <CardDescription>
-            One-time payment for on-chain registration and {meta.fakeCheckout ? "testnet" : ""} storage on this node.
+            {t("pay.activateDesc", { testnet: meta.fakeCheckout ? t("pay.testnet") : "" })}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg bg-muted p-4 text-sm">
-            <p className="font-semibold">${meta.signupPrice} USDC</p>
-            <p className="mt-2 text-muted-foreground">
-              Your OE id <strong>{signup.oeId}</strong> is registered on-chain. Mail blobs are encrypted to your DEK;
-              this node only stores ciphertext and your opt-in choice.
-            </p>
+            <p className="font-semibold">{t("pay.priceLine", { price: meta.signupPrice })}</p>
+            <p className="mt-2 text-muted-foreground">{t("pay.priceDesc", { oeId: signup.oeId })}</p>
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <p className="text-sm">
-            Status: <strong>{signup.status}</strong>
-            {polling ? " (checking…)" : ""}
-            {busy ? " — waiting for passkey…" : ""}
+            {t("pay.status")} <strong>{signup.status}</strong>
+            {polling ? t("pay.checking") : ""}
+            {busy ? t("pay.waitingPasskeyInline") : ""}
           </p>
           <Button
             variant="outline"
@@ -110,7 +109,7 @@ export function PayModal({
             disabled={busy}
             onClick={() => window.open(payUrl, "_blank", "noopener")}
           >
-            Open invoice in new tab
+            {t("pay.openInvoice")}
           </Button>
           {signup.status !== "paid" && onMarkPaid ? (
             <Button
@@ -119,21 +118,18 @@ export function PayModal({
               disabled={busy}
               onClick={() => void onMarkPaid().catch(() => undefined)}
             >
-              Mark paid (test only)
+              {t("pay.markPaidTest")}
             </Button>
           ) : null}
           {signup.status === "paid" ? (
             <Button className="w-full" disabled={busy} onClick={handleRegister}>
-              {busy ? "Waiting for passkey…" : "Register on-chain & continue"}
+              {busy ? t("common.waitingPasskey") : t("pay.registerContinue")}
             </Button>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Pay in the new tab, or use Mark paid (test only) to skip checkout. This modal updates when payment is
-              confirmed.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("pay.payHint")}</p>
           )}
           <Button variant="ghost" className="w-full" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         </CardContent>
       </DialogContent>

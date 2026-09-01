@@ -4,12 +4,14 @@ import type { Hex } from "viem";
 import type { Meta } from "@/lib/api";
 import type { Session } from "@/App";
 import { optedIn } from "@/lib/api";
-import { connectPasskey, createPasskey, generateTransportKeypair, openEnvelope, unwrapDek, wrapDek } from "@/lib/webauthn";
+import { connectPasskey, createPasskey, generateTransportKeypair, openEnvelope, wrapDek } from "@/lib/webauthn";
 import { rememberPasskey } from "@/lib/passkeys-store";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n, useT } from "@/i18n/I18nProvider";
+import { localizeError } from "@/i18n/localize-error";
 
 type Props = {
   open: boolean;
@@ -19,6 +21,8 @@ type Props = {
 };
 
 export function PairScanModal({ open, meta, onClose, onDone }: Props) {
+  const t = useT();
+  const { messages } = useI18n();
   const [sid, setSid] = useState(() => new URLSearchParams(location.search).get("pair") ?? "");
   const [step, setStep] = useState<"scan" | "passkey" | "wait">("scan");
   const [error, setError] = useState("");
@@ -41,7 +45,7 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         if (!alive) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((tr) => tr.stop());
           return;
         }
         streamRef.current = stream;
@@ -66,12 +70,12 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
           void loop();
         }
       } catch {
-        /* camera optional — manual sid entry */
+        /* camera optional */
       }
     })();
     return () => {
       alive = false;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, [open, step, sid]);
 
@@ -86,10 +90,10 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ guestPub }),
       });
-      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "join failed");
+      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? t("errors.joinFailed"));
       setStep("passkey");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     } finally {
       setBusy(false);
     }
@@ -101,7 +105,7 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
     try {
       const sessionRes = await fetch(`/pair/sessions/${encodeURIComponent(sid)}`);
       const session = (await sessionRes.json()) as { name: string; status: string; sealedDek?: Hex };
-      if (!sessionRes.ok) throw new Error("unknown session");
+      if (!sessionRes.ok) throw new Error(t("errors.unknownSession"));
 
       let credentialId: Hex;
       let kek: Uint8Array;
@@ -135,7 +139,7 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ credentialId, wrappedDek }),
       });
-      if (!fin.ok) throw new Error("finish failed");
+      if (!fin.ok) throw new Error(t("errors.finishFailed"));
 
       const oeId = session.name.replace(/\.testnet$/, "");
       onDone({
@@ -146,7 +150,7 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
         optedIn: await optedIn(session.name, meta.nodeKey),
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
       setStep("passkey");
     } finally {
       setBusy(false);
@@ -159,34 +163,34 @@ export function PairScanModal({ open, meta, onClose, onDone }: Props) {
     <Dialog open={open} onClose={onClose}>
       <DialogContent>
         <CardHeader>
-          <CardTitle>Add this device</CardTitle>
-          <CardDescription>Scan the QR from Settings on your signed-in device, or paste the session id.</CardDescription>
+          <CardTitle>{t("pair.addThisDevice")}</CardTitle>
+          <CardDescription>{t("pair.addThisDeviceDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {step === "scan" ? (
             <>
               <video ref={videoRef} className="aspect-video w-full rounded-lg bg-black object-cover" muted playsInline />
-              <Input value={sid} onChange={(e) => setSid(e.target.value)} placeholder="pair session id" />
+              <Input value={sid} onChange={(e) => setSid(e.target.value)} placeholder={t("pair.sessionPlaceholder")} />
               <Button className="w-full" disabled={!sid || busy} onClick={() => void join()}>
-                Continue
+                {t("common.continue")}
               </Button>
             </>
           ) : null}
           {step === "passkey" ? (
             <>
-              <p className="text-sm text-muted-foreground">Waiting for the other device to approve. Then create or connect a passkey on this device.</p>
+              <p className="text-sm text-muted-foreground">{t("pair.waitingOther")}</p>
               <Button className="w-full" disabled={busy} onClick={() => void finishPair(true)}>
-                Create passkey on this device
+                {t("pair.createPasskey")}
               </Button>
               <Button variant="outline" className="w-full" disabled={busy} onClick={() => void finishPair(false)}>
-                Connect existing passkey
+                {t("pair.connectPasskey")}
               </Button>
             </>
           ) : null}
-          {step === "wait" ? <p className="text-sm">Finishing pairing…</p> : null}
+          {step === "wait" ? <p className="text-sm">{t("pair.finishing")}</p> : null}
           <Button variant="ghost" className="w-full" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         </CardContent>
       </DialogContent>

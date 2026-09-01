@@ -7,6 +7,7 @@ export default defineConfig({
   workers: 1,
   use: {
     ...devices["Desktop Chrome"],
+    locale: "en-US",
     trace: "on-first-retry",
   },
   globalSetup: "./e2e/global-setup.ts",

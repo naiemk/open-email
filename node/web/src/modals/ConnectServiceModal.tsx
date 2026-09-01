@@ -10,6 +10,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { useI18n, useT } from "@/i18n/I18nProvider";
+import { localizeError } from "@/i18n/localize-error";
 import QRCode from "qrcode";
 
 const GRANTED_INVITES_KEY = "open-email/granted-invites/v1";
@@ -22,6 +24,8 @@ type Props = {
 };
 
 export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
+  const t = useT();
+  const { messages } = useI18n();
   const [inviteInput, setInviteInput] = useState("");
   const [confirmedDomain, setConfirmedDomain] = useState("");
   const [grantBlob, setGrantBlob] = useState("");
@@ -44,7 +48,7 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
     setError("");
     try {
       const invite = parseInvite(inviteInput.trim());
-      if (!invite.nodeKey) throw new Error("Invite is missing node identity");
+      if (!invite.nodeKey) throw new Error(t("errors.inviteMissingNode"));
       const node = await fetchNode(invite.nodeKey);
       const used = await fetchInviteUsed(invite.inviteId);
       verifyInvite(invite, {
@@ -55,7 +59,7 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
       setConfirmedDomain(node.domain);
       setStep("confirm");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     } finally {
       setBusy(false);
     }
@@ -67,11 +71,11 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
     try {
       const invite = parseInvite(inviteInput.trim());
       const used = await fetchInviteUsed(invite.inviteId);
-      if (used) throw new Error("Invite already used");
+      if (used) throw new Error(t("errors.inviteUsed"));
 
       const granted = JSON.parse(sessionStorage.getItem(GRANTED_INVITES_KEY) ?? "[]") as string[];
       if (granted.includes(invite.inviteId)) {
-        throw new Error("You already issued a grant for this invite in this browser");
+        throw new Error(t("errors.grantAlreadyIssued"));
       }
 
       const challenge = await linkChallenge(
@@ -100,7 +104,7 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
       setGrantQr(await QRCode.toDataURL(grant, { width: 240, margin: 2 }));
       setStep("grant");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     } finally {
       setBusy(false);
     }
@@ -118,16 +122,16 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
     >
       <DialogContent>
         <CardHeader>
-          <CardTitle>Connect to another open-email service</CardTitle>
+          <CardTitle>{t("connectService.title")}</CardTitle>
           <CardDescription>
-            Paste the invite from {session.oeId}@{meta.domain}&apos;s new node. You will get a grant to paste back there.
+            {t("connectService.desc", { address: `${session.oeId}@${meta.domain}` })}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {step === "paste" ? (
             <>
-              <Label htmlFor="invite-blob">Paste invite from the other service</Label>
+              <Label htmlFor="invite-blob">{t("connectService.pasteInvite")}</Label>
               <textarea
                 id="invite-blob"
                 className="h-24 w-full rounded-md border border-border p-2 font-mono text-xs"
@@ -135,38 +139,46 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
                 onChange={(e) => setInviteInput(e.target.value)}
               />
               <Button className="w-full" disabled={busy || !inviteInput.trim()} onClick={() => void verifyAndConfirm()}>
-                Verify invite
+                {t("connectService.verifyInvite")}
               </Button>
             </>
           ) : null}
           {step === "confirm" ? (
             <>
               <p className="text-sm">
-                You are authorizing <strong>{confirmedDomain}</strong> to receive mail for{" "}
-                <strong>{registryName(session.oeId, meta.domain)}</strong>.
+                {t("connectService.authorizing", {
+                  domain: confirmedDomain,
+                  name: registryName(session.oeId, meta.domain),
+                })}
               </p>
-              <p className="text-xs text-muted-foreground">Confirm this is the domain shown on the registry.</p>
+              <p className="text-xs text-muted-foreground">{t("connectService.confirmDomain")}</p>
               <Button className="w-full" disabled={busy} onClick={() => void issueGrant()}>
-                Confirm with passkey
+                {t("connectService.confirmPasskey")}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setStep("paste")}>
-                Back
+                {t("common.back")}
               </Button>
             </>
           ) : null}
           {step === "grant" ? (
             <>
               {grantQr ? (
-                <img src={grantQr} alt="Grant QR" className="mx-auto w-[min(240px,80vw)] rounded-lg" />
+                <img src={grantQr} alt={t("connectService.grantQr")} className="mx-auto w-[min(240px,80vw)] rounded-lg" />
               ) : null}
               <textarea
                 readOnly
                 className="h-32 w-full rounded-md border border-border p-2 font-mono text-xs"
                 value={grantBlob}
               />
-              <p className="text-sm text-primary">Copy this grant back to the other service.</p>
-              <Button className="w-full" onClick={() => { reset(); onClose(); }}>
-                Done
+              <p className="text-sm text-primary">{t("connectService.copyGrant")}</p>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  reset();
+                  onClose();
+                }}
+              >
+                {t("common.done")}
               </Button>
             </>
           ) : null}
@@ -179,7 +191,7 @@ export function ConnectServiceModal({ open, meta, session, onClose }: Props) {
                 onClose();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
           ) : null}
         </CardContent>

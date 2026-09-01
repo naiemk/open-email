@@ -10,7 +10,9 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import {
   decryptRows,
+  deleteMailPermanently,
   downloadEml,
+  emptyTrash,
   extractEmailAddress,
   fetchIndex,
   fetchLabels,
@@ -25,6 +27,7 @@ import {
   type Mail,
   smtpFrom,
 } from "@/lib/mail";
+import { useTurnstile, TurnstileMount } from "@/lib/use-turnstile";
 import { SidebarNav, type Folder } from "@/components/mail/SidebarNav";
 import { MessageList } from "@/components/mail/MessageList";
 import { MessageReader } from "@/components/mail/MessageReader";
@@ -37,6 +40,8 @@ import { SettingsPage } from "@/screens/SettingsPage";
 import { ComposeFab } from "@/components/mobile/ComposeFab";
 import { MobileMailHeader } from "@/components/mobile/MobileMailHeader";
 import { NavDrawer } from "@/components/mobile/NavDrawer";
+import { useI18n, useT } from "@/i18n/I18nProvider";
+import { localizeError } from "@/i18n/localize-error";
 
 type Props = {
   meta: Meta;
@@ -59,6 +64,8 @@ function mailInFolder(m: Mail, folder: Folder, nowSec: number): boolean {
 }
 
 export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
+  const t = useT();
+  const { messages } = useI18n();
   const [screen, setScreen] = useState<Screen>("mail");
   const [folder, setFolder] = useState<Folder>("inbox");
   const [mails, setMails] = useState<Mail[]>([]);
@@ -89,6 +96,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [mobilePane, setMobilePane] = useState<"list" | "reader">("list");
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const { getTurnstile, containerRef: turnstileContainerRef } = useTurnstile(meta);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("optin") === "1") {
@@ -99,26 +107,26 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const reloadCore = useCallback(async () => {
     setLoadError("");
     const rows = await fetchIndex(session.name);
-    setMails(await decryptRows(session.name, rows, session.dekPrivate));
+    setMails(await decryptRows(session.name, rows, session.dekPrivate, t("errors.decryptFailed")));
     setLabels(await fetchLabels(session.name).catch(() => []));
     const st = (await (await fetch(`/storage/${encodeURIComponent(session.name)}`)).json()) as typeof storage;
     setStorage(st);
     onSessionUpdate({ optedIn: await fetchOptedIn(session.name, meta.nodeKey) });
-  }, [session, meta.nodeKey, onSessionUpdate]);
+  }, [session, meta.nodeKey, onSessionUpdate, t]);
 
   const reload = useCallback(
     () =>
       run("reload", reloadCore).catch((e) => {
-        setLoadError(e instanceof Error ? e.message : String(e));
+        setLoadError(localizeError(messages, e));
       }),
-    [run, reloadCore],
+    [run, reloadCore, messages],
   );
 
   useEffect(() => {
     void reloadCore().catch((e) => {
-      setLoadError(e instanceof Error ? e.message : String(e));
+      setLoadError(localizeError(messages, e));
     });
-  }, [reloadCore]);
+  }, [reloadCore, messages]);
 
   const nowSec = Math.floor(Date.now() / 1000);
   const visible = useMemo(() => mails.filter((m) => mailInFolder(m, folder, nowSec)), [mails, folder, nowSec]);
@@ -141,7 +149,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   );
   const unreadInbox = mails.filter((m) => mailInFolder(m, "inbox", nowSec) && isUnread(m)).length;
 
-  const patchSeqs = (seqs: number[], patch: Parameters<typeof patchMailState>[1][number]) =>
+  const patchSeqs = (seqs: number[], patch: Omit<Parameters<typeof patchMailState>[1][number], "seq">) =>
     void run("mail", async () => {
       await patchMailState(
         session.name,
@@ -150,8 +158,44 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       await reloadCore();
       setSelectedSeqs(new Set());
     }).catch((e) => {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     });
+
+  const permanentDeleteSeqs = (seqs: number[]) => {
+    if (!seqs.length) return;
+    void run("mail", async () => {
+      for (const seq of seqs) {
+        await deleteMailPermanently(session.name, seq);
+      }
+      if (selected !== null && seqs.includes(selected)) setSelected(null);
+      setSelectedSeqs(new Set());
+      await reloadCore();
+    }).catch((e) => {
+      setError(localizeError(messages, e));
+    });
+  };
+
+  const moveToTrash = (seqs: number[]) => {
+    if (!seqs.length) return;
+    if (folder === "trash") {
+      permanentDeleteSeqs(seqs);
+      return;
+    }
+    patchSeqs(seqs, { trashed: true });
+  };
+
+  const deleteAllTrash = () => {
+    if (folder !== "trash") return;
+    if (!window.confirm(t("trash.confirmDeleteAll"))) return;
+    void run("mail", async () => {
+      await emptyTrash(session.name);
+      setSelected(null);
+      setSelectedSeqs(new Set());
+      await reloadCore();
+    }).catch((e) => {
+      setError(localizeError(messages, e));
+    });
+  };
 
   const targetSeqs = () => (selectedSeqs.size > 0 ? [...selectedSeqs] : sel ? [sel.seq] : []);
 
@@ -202,14 +246,19 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     setNavOpen(false);
   };
 
-  const send = () =>
+  const send = () => {
+    if (isPending("send")) {
+      setError(t("errors.busy"));
+      return;
+    }
     void run("send", async () => {
       setError("");
       const to = composeTo.trim();
       if (!to || !to.includes("@")) {
-        setError("Enter a valid recipient address");
+        setError(t("errors.invalidRecipient"));
         return;
       }
+      const turnstile = await getTurnstile();
       const res = await fetch("/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -219,11 +268,13 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
           subject: composeSubject,
           body: composeBody,
           attachments: composeAttachments.length ? composeAttachments : undefined,
-          turnstile: meta.fakeCheckout || meta.disableTurnstile ? "ok" : "",
+          turnstile,
         }),
       });
       if (!res.ok) {
-        setError(((await res.json()) as { error?: string }).error ?? "send failed");
+        const body = (await res.json()) as { error?: string };
+        const err = body.error === "turnstile" ? t("errors.turnstileRequired") : body.error ?? t("errors.sendFailed");
+        setError(err);
         return;
       }
       setComposing(false);
@@ -233,7 +284,10 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       setComposeAttachments([]);
       setFolder("sent");
       await reloadCore();
+    }).catch((e) => {
+      setError(localizeError(messages, e));
     });
+  };
 
   const completeOptIn = () =>
     void run("opt", async () => {
@@ -255,7 +309,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       setOptInReady(false);
       onSessionUpdate({ optedIn: true });
     }).catch((e) => {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     });
 
   const optToggle = () => {
@@ -277,7 +331,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         });
         onSessionUpdate({ optedIn: false });
       }).catch((e) => {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(localizeError(messages, e));
       });
       return;
     }
@@ -316,6 +370,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
 
   return (
     <div className="flex h-screen flex-col bg-[#f4f1fb]">
+      <TurnstileMount containerRef={turnstileContainerRef} />
       <MobileMailHeader
         folder={folder}
         searchOpen={searchOpen}
@@ -328,7 +383,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         <span className="text-sm font-medium text-muted-foreground">{session.oeId}@{meta.domain}</span>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            {session.optedIn ? "Opted in" : "Not opted in"}
+            {session.optedIn ? t("mail.optedIn") : t("mail.notOptedIn")}
           </span>
           <button
             type="button"
@@ -342,21 +397,21 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       {loadError ? (
         <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {loadError}
-          <button type="button" className="ml-3 underline disabled:opacity-50" disabled={isPending("reload")} onClick={() => reload()}>
-            {isPending("reload") ? "Retrying…" : "Retry"}
+          <button type="button" className="ms-3 underline disabled:opacity-50" disabled={isPending("reload")} onClick={() => reload()}>
+            {isPending("reload") ? t("common.retrying") : t("common.retry")}
           </button>
         </div>
       ) : null}
       {optInReady && !session.optedIn ? (
         <div className="flex items-center justify-between gap-3 border-b border-primary/20 bg-primary/5 px-4 py-2 text-sm">
-          <span>Opt in to receive mail on this node — confirm with your passkey.</span>
+          <span>{t("mail.optInBanner")}</span>
           <button
             type="button"
             className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
             disabled={isPending("opt")}
             onClick={completeOptIn}
           >
-            {isPending("opt") ? "Waiting…" : "Opt in"}
+            {isPending("opt") ? t("common.waiting") : t("mail.optIn")}
           </button>
         </div>
       ) : null}
@@ -410,24 +465,26 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         </NavDrawer>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <MailToolbar
+            folder={folder}
             allSelected={allSelected}
             someSelected={someSelected}
             pending={isPending("mail")}
             onSelectAll={(checked) => setSelectedSeqs(checked ? new Set(rows.map((m) => m.seq)) : new Set())}
             onMarkRead={() => markRead(true)}
             onMarkUnread={() => markRead(false)}
-            onTrash={() => patchSeqs(targetSeqs(), { trashed: true })}
+            onTrash={() => moveToTrash(targetSeqs())}
             onArchive={() => patchSeqs(targetSeqs(), { archived: true, spam: false })}
             onSpam={() => patchSeqs(targetSeqs(), { spam: true, archived: false })}
             onMoveInbox={() => patchSeqs(targetSeqs(), { archived: false, spam: false, trashed: false })}
             onLabels={() => openLabels(targetSeqs())}
             onSnooze={(until) => patchSeqs(targetSeqs(), { snoozeUntil: until })}
+            onDeleteAll={folder === "trash" ? deleteAllTrash : undefined}
           />
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden md:contents">
             <div
               className={cn(
                 "pane-slide flex h-full w-[200%] md:h-auto md:min-h-0 md:w-auto md:flex-1 md:translate-x-0",
-                mobilePane === "reader" ? "-translate-x-1/2" : "translate-x-0",
+                mobilePane === "reader" ? "-translate-x-1/2 rtl:translate-x-1/2" : "translate-x-0",
               )}
             >
               <div className="flex h-full w-1/2 min-w-0 md:h-auto md:w-auto md:flex-none">
@@ -457,7 +514,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
                   pending={isPending("mail")}
                   onBack={isMobile ? () => setMobilePane("list") : undefined}
                   onMarkRead={(unread) => markRead(!unread, sel ? [sel.seq] : [])}
-                  onTrash={() => sel && patchSeqs([sel.seq], { trashed: true })}
+                  onTrash={() => sel && moveToTrash([sel.seq])}
                   onRestore={() => {
                     if (!sel) return;
                     void run("mail", async () => {
@@ -477,9 +534,10 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
                   onReportPhishing={() => {
                     if (!sel) return;
                     patchSeqs([sel.seq], { spam: true });
-                    setToast("Message moved to spam.");
+                    setToast(t("mail.movedToSpam"));
                     setTimeout(() => setToast(""), 3000);
                   }}
+                  onDeleteAll={folder === "trash" ? deleteAllTrash : undefined}
                   onReply={() => sel && openCompose("reply", sel)}
                   onReplyAll={() => sel && openCompose("replyAll", sel)}
                   onForward={() => sel && openCompose("forward", sel)}

@@ -25,6 +25,8 @@ import { CardContent, CardDescription, CardHeader, CardTitle } from "@/component
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n, useT } from "@/i18n/I18nProvider";
+import { localizeError } from "@/i18n/localize-error";
 import QRCode from "qrcode";
 
 const PAIR_SESSION_KEY = "open-email/service-pair/v1";
@@ -49,6 +51,8 @@ type Props = {
 };
 
 export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, onDone }: Props) {
+  const t = useT();
+  const { messages } = useI18n();
   const [oeId, setOeId] = useState(initialOeId);
   const [step, setStep] = useState<"id" | "invite" | "grant">("id");
   const [error, setError] = useState("");
@@ -74,10 +78,10 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
     setBusy(true);
     setError("");
     try {
-      if (!isValidOeId(oeId.trim())) throw new Error("OE id must be at least 5 characters with no dots");
+      if (!isValidOeId(oeId.trim())) throw new Error(t("errors.invalidOeId"));
       const name = registryName(oeId.trim(), meta.domain);
       const record = await fetchName(name);
-      if (!record.exists) throw new Error("No mailbox with that id on the registry");
+      if (!record.exists) throw new Error(t("errors.noMailbox"));
 
       const mat = await createPasskey(oeId.trim(), meta.domain);
       rememberPasskey({
@@ -112,7 +116,7 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
       sessionStorage.setItem(PAIR_SESSION_KEY, JSON.stringify(session));
       setStep("invite");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     } finally {
       setBusy(false);
     }
@@ -123,12 +127,12 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
     setError("");
     try {
       const raw = sessionStorage.getItem(PAIR_SESSION_KEY);
-      if (!raw) throw new Error("Pairing session expired — start again");
+      if (!raw) throw new Error(t("errors.pairingExpired"));
       const pending = JSON.parse(raw) as PairSession;
       const grant = parseGrant(grantInput.trim());
-      if (grant.name !== pending.name) throw new Error("Grant name mismatch");
-      if (grant.qx.toLowerCase() !== pending.qx.toLowerCase()) throw new Error("Grant passkey mismatch");
-      if (grant.qy.toLowerCase() !== pending.qy.toLowerCase()) throw new Error("Grant passkey mismatch");
+      if (grant.name !== pending.name) throw new Error(t("errors.grantNameMismatch"));
+      if (grant.qx.toLowerCase() !== pending.qx.toLowerCase()) throw new Error(t("errors.grantPasskeyMismatch"));
+      if (grant.qy.toLowerCase() !== pending.qy.toLowerCase()) throw new Error(t("errors.grantPasskeyMismatch"));
 
       await submitLink({
         name: grant.name,
@@ -160,7 +164,7 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
         optedIn: await optedIn(grant.name, meta.nodeKey),
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(localizeError(messages, e));
     } finally {
       setBusy(false);
     }
@@ -178,51 +182,47 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
     >
       <DialogContent>
         <CardHeader>
-          <CardTitle>Open existing mailbox</CardTitle>
-          <CardDescription>
-            Pair from another open-email service. Copy the invite to your old node, then paste the grant here.
-          </CardDescription>
+          <CardTitle>{t("servicePair.openExisting")}</CardTitle>
+          <CardDescription>{t("servicePair.openExistingDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {step === "id" ? (
             <>
               <div>
-                <Label htmlFor="open-oe-id">Your OE id</Label>
+                <Label htmlFor="open-oe-id">{t("servicePair.yourOeId")}</Label>
                 <Input
                   id="open-oe-id"
                   value={oeId}
                   onChange={(e) => setOeId(e.target.value)}
-                  placeholder="alice"
+                  placeholder={t("landing.oeIdPlaceholder")}
                   className="mt-1"
                 />
               </div>
               <Button className="w-full" disabled={busy || !oeId.trim()} onClick={() => void startOpen()}>
-                Continue
+                {t("common.continue")}
               </Button>
             </>
           ) : null}
           {step === "invite" ? (
             <>
               {inviteQr ? (
-                <img src={inviteQr} alt="Invite QR" className="mx-auto w-[min(240px,80vw)] rounded-lg" />
+                <img src={inviteQr} alt={t("servicePair.inviteQr")} className="mx-auto w-[min(240px,80vw)] rounded-lg" />
               ) : null}
               <textarea
                 readOnly
                 className="h-24 w-full rounded-md border border-border p-2 font-mono text-xs"
                 value={inviteBlob}
               />
-              <p className="text-sm text-muted-foreground">
-                On your other service: Settings → Connect to another open-email service. Paste this invite.
-              </p>
+              <p className="text-sm text-muted-foreground">{t("servicePair.inviteInstructions")}</p>
               <Button variant="outline" className="w-full" onClick={() => setStep("grant")}>
-                I have a grant
+                {t("servicePair.haveGrant")}
               </Button>
             </>
           ) : null}
           {step === "grant" ? (
             <>
-              <Label htmlFor="grant-blob">Paste grant from your other service</Label>
+              <Label htmlFor="grant-blob">{t("servicePair.pasteGrant")}</Label>
               <textarea
                 id="grant-blob"
                 className="h-24 w-full rounded-md border border-border p-2 font-mono text-xs"
@@ -230,7 +230,7 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
                 onChange={(e) => setGrantInput(e.target.value)}
               />
               <Button className="w-full" disabled={busy || !grantInput.trim()} onClick={() => void acceptGrant()}>
-                Finish pairing
+                {t("servicePair.finishPairing")}
               </Button>
             </>
           ) : null}
@@ -242,7 +242,7 @@ export function ServicePairOpenModal({ open, meta, initialOeId = "", onClose, on
               onClose();
             }}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
         </CardContent>
       </DialogContent>

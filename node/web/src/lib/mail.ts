@@ -79,13 +79,28 @@ export async function restoreMail(name: string, seq: number): Promise<void> {
   await fetch(`/restore/${encodeURIComponent(name)}/${seq}`, { method: "POST" });
 }
 
+export async function emptyTrash(name: string): Promise<void> {
+  const res = await fetch(`/empty-trash/${encodeURIComponent(name)}`, { method: "POST" });
+  if (!res.ok) throw new Error("empty trash failed");
+}
+
+export async function deleteMailPermanently(name: string, seq: number): Promise<void> {
+  const res = await fetch(`/delete/${encodeURIComponent(name)}/${seq}`, { method: "POST" });
+  if (!res.ok) throw new Error("delete failed");
+}
+
 export async function fetchBlob(name: string, cid: string): Promise<Uint8Array> {
   const res = await fetch(`/blobs/${encodeURIComponent(cid)}?name=${encodeURIComponent(name)}`);
   if (!res.ok) throw new Error(`Blob ${cid} not found`);
   return new Uint8Array(await res.arrayBuffer());
 }
 
-export async function decryptRows(name: string, rows: IndexRow[], dekPrivate: Uint8Array): Promise<Mail[]> {
+export async function decryptRows(
+  name: string,
+  rows: IndexRow[],
+  dekPrivate: Uint8Array,
+  decryptFailedBody = "Could not decrypt this message.",
+): Promise<Mail[]> {
   const mails: Mail[] = [];
   for (const row of rows) {
     try {
@@ -98,7 +113,7 @@ export async function decryptRows(name: string, rows: IndexRow[], dekPrivate: Ui
         from: "(decrypt failed)",
         to: "",
         subject: `Message #${row.seq}`,
-        body: "Could not decrypt this message.",
+        body: decryptFailedBody,
         rawRfc822: "",
         attachments: [],
       });
@@ -177,8 +192,8 @@ export function hasHtmlBody(mail: Pick<Mail, "htmlBody" | "body">): boolean {
 /** Wrap partial HTML fragments in a document that fills the reader width. */
 export function wrapHtmlForView(html: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
-html,body{margin:0;padding:0;width:100%;height:100%;box-sizing:border-box;background:#fff;color:#111;overflow:auto;}
-body{padding:16px;}
+html,body{margin:0;padding:0;width:100%;box-sizing:border-box;background:#fff;color:#111;}
+body{padding:16px;overflow:visible;min-height:auto;}
 img{max-width:100%!important;height:auto!important;}
 table{max-width:100%!important;}
 </style></head><body>${html}</body></html>`;
@@ -195,22 +210,22 @@ export function smtpFrom(domain: string, name: string): string {
   return `${oeId}@${domain}`;
 }
 
-export function formatMailDate(ts: number): string {
+export function formatMailDate(ts: number, locale?: string): string {
   const d = new Date(ts * 1000);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   }
-  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
 }
 
-export function formatMailWeekday(ts: number): string {
+export function formatMailWeekday(ts: number, locale?: string): string {
   const d = new Date(ts * 1000);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   }
-  return d.toLocaleDateString([], { weekday: "long" });
+  return d.toLocaleDateString(locale, { weekday: "long" });
 }
 
 export function senderInitial(from: string): string {

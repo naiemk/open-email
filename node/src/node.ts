@@ -226,6 +226,18 @@ function mailboxName(config: NodeConfig, address: string): string | undefined {
   return local;
 }
 
+function permanentlyDelete(
+  config: NodeConfig,
+  mailboxState: MailboxStateStore,
+  name: string,
+  seqs: number[],
+): void {
+  if (!seqs.length) return;
+  const cids = config.index.remove(name, seqs);
+  mailboxState.clearTrashFlags(name, seqs);
+  for (const cid of cids) config.blobs.unpin(cid);
+}
+
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -393,10 +405,20 @@ async function handleHttp(
     }
     if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
       const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
-      const seqs = mailboxState.trashedSeqs(name);
-      const cids = config.index.remove(name, seqs);
-      mailboxState.clearTrashFlags(name, seqs);
-      for (const cid of cids) config.blobs.unpin(cid);
+      permanentlyDelete(config, mailboxState, name, mailboxState.trashedSeqs(name));
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/delete/")) {
+      const rest = url.pathname.slice("/delete/".length);
+      const slash = rest.lastIndexOf("/");
+      const name = decodeURIComponent(rest.slice(0, slash));
+      const seq = Number(rest.slice(slash + 1));
+      if (!mailboxState.getFlags(name, seq).trashed) {
+        json(res, 400, { error: "not in trash" });
+        return;
+      }
+      permanentlyDelete(config, mailboxState, name, [seq]);
       json(res, 200, { ok: true });
       return;
     }

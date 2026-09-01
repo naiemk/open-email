@@ -6,6 +6,7 @@ import { sealEnvelope } from "@/lib/webauthn";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/I18nProvider";
 
 type Props = {
   open: boolean;
@@ -16,10 +17,10 @@ type Props = {
 };
 
 export function PairQrModal({ open, name, credentialId, dekPrivate, onClose }: Props) {
+  const t = useT();
   const [qr, setQr] = useState("");
   const [sid, setSid] = useState("");
   const [status, setStatus] = useState("");
-  const [guestPub, setGuestPub] = useState<Hex | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +43,6 @@ export function PairQrModal({ open, name, credentialId, dekPrivate, onClose }: P
           };
           setStatus(s.status);
           if (s.status === "joined" && s.guestPub) {
-            setGuestPub(s.guestPub);
             const sealed = bytesToHex(await sealEnvelope(hexToBytes(s.guestPub), name, dekPrivate));
             await fetch(`/pair/sessions/${encodeURIComponent(body.sid)}/grant`, {
               method: "POST",
@@ -68,19 +68,21 @@ export function PairQrModal({ open, name, credentialId, dekPrivate, onClose }: P
     <Dialog open={open} onClose={onClose}>
       <DialogContent>
         <CardHeader>
-          <CardTitle>Add another device</CardTitle>
-          <CardDescription>Scan this QR on the new device (Add device to another account).</CardDescription>
+          <CardTitle>{t("pair.addDevice")}</CardTitle>
+          <CardDescription>{t("pair.addDeviceDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
           {qr ? (
-            <img src={qr} alt="Pairing QR" className="mx-auto w-[min(280px,80vw)] rounded-lg" />
+            <img src={qr} alt={t("pair.pairingQr")} className="mx-auto w-[min(280px,80vw)] rounded-lg" />
           ) : (
-            <p>Starting session…</p>
+            <p>{t("pair.startingSession")}</p>
           )}
-          <p className="text-xs text-muted-foreground">Session {sid.slice(0, 24)}… · {status}</p>
-          {status === "granted" ? <p className="text-sm text-primary">DEK sent. Finish on the other device.</p> : null}
+          <p className="text-xs text-muted-foreground">
+            {t("pair.sessionStatus", { sid: sid.slice(0, 24), status })}
+          </p>
+          {status === "granted" ? <p className="text-sm text-primary">{t("pair.dekSent")}</p> : null}
           <Button variant="ghost" className="w-full" onClick={onClose}>
-            Close
+            {t("common.close")}
           </Button>
         </CardContent>
       </DialogContent>
