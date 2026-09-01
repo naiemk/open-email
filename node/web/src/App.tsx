@@ -4,6 +4,7 @@ import { bytesToHex, hexToBytes } from "viem";
 import {
   assertWebAuthn,
   abortPasskeyCeremony,
+  awaitPasskeyIdle,
   connectPasskey,
   createPasskey,
   encodeRecovery,
@@ -391,9 +392,8 @@ export default function App() {
       passkeyLog("onPaidRegister:register-challenge-fetch", { name });
       const challenge = await registerChallenge(name, dekPublic, wrappedDek);
       passkeyLog("onPaidRegister:register-challenge-ok", { challengeLen: challenge.length });
-      passkeyLog("onPaidRegister:clear-ceremony-before-assert");
-      abortPasskeyCeremony();
-      await new Promise((r) => setTimeout(r, 200));
+      passkeyLog("onPaidRegister:await-passkey-idle");
+      await awaitPasskeyIdle();
       passkeyLog("onPaidRegister:assert-webauthn-start", { credentialId: signup.credentialId.slice(0, 18) });
       const auth = await assertWebAuthn(challenge, signup.credentialId);
       passkeyLog("onPaidRegister:assert-webauthn-ok");
@@ -426,9 +426,9 @@ export default function App() {
       if (!signup || !meta || !pendingSession) return;
       passkeyLog("onRecoverySaved:start", { oeId: signup.oeId });
       const challenge = await optInChallenge(registryName(signup.oeId, meta.domain), meta.nodeKey);
+      passkeyLog("onRecoverySaved:await-passkey-idle");
+      await awaitPasskeyIdle();
       passkeyLog("onRecoverySaved:assert-webauthn-start");
-      abortPasskeyCeremony();
-      await new Promise((r) => setTimeout(r, 200));
       const auth = await assertWebAuthn(challenge, signup.credentialId);
       passkeyLog("onRecoverySaved:assert-webauthn-ok");
       await confirmSaved({ invoiceId: signup.invoiceId, credentialId: signup.credentialId, auth });

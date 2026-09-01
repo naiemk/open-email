@@ -57,6 +57,11 @@ describe("WebAuthn user errors", () => {
     expect(webAuthnUserError(err)).toMatch(/already open/i);
   });
 
+  it("explains OperationError already pending", () => {
+    const err = Object.assign(new Error("A request is already pending."), { name: "OperationError" });
+    expect(webAuthnUserError(err)).toMatch(/already open/i);
+  });
+
   it("maps AbortError to cancelled", () => {
     const err = Object.assign(new Error("Aborted"), { name: "AbortError" });
     expect(webAuthnUserError(err)).toMatch(/cancelled/i);

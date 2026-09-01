@@ -19,8 +19,8 @@ export function webAuthnUserError(err: unknown): string {
   const name = err instanceof Error ? err.name : "";
   const message = err instanceof Error ? err.message : String(err);
   if (name === "AbortError") return "Passkey cancelled.";
-  if (name === "InvalidStateError" || /already pending/i.test(message)) {
-    return "A passkey prompt is already open. Finish or cancel it, then try again.";
+  if (name === "InvalidStateError" || name === "OperationError" || /already pending/i.test(message)) {
+    return "A passkey prompt is already open. Finish or cancel it, reload the page, then try again.";
   }
   if (name === "NotAllowedError") return "Passkey was cancelled.";
   return message;
