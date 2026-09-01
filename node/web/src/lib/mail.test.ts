@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRfc822 } from "./mail.ts";
+import { hasHtmlBody, parseRfc822, wrapHtmlForView } from "./mail.ts";
 
 describe("parseRfc822", () => {
   it("parses plain text messages", async () => {
@@ -42,5 +42,11 @@ describe("parseRfc822", () => {
     expect(parsed.body).toContain("Body text");
     expect(parsed.attachments).toHaveLength(1);
     expect(parsed.attachments[0]?.filename).toBe("note.txt");
+  });
+
+  it("detects html bodies", () => {
+    expect(hasHtmlBody({ htmlBody: "<p>Hi</p>" })).toBe(true);
+    expect(hasHtmlBody({ htmlBody: "  " })).toBe(false);
+    expect(wrapHtmlForView("<p>Hi</p>")).toContain("<!DOCTYPE html>");
   });
 });

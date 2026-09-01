@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Mail } from "@/lib/mail";
+import { hasHtmlBody, wrapHtmlForView } from "@/lib/mail";
 import { AttachmentList } from "@/components/mail/AttachmentList";
 import { MessageActionBar } from "@/components/mail/MessageActionBar";
 import { MessageHeaderActions } from "@/components/mail/MessageHeaderActions";
 import type { Folder } from "@/components/mail/SidebarNav";
+import { Button } from "@/components/ui/button";
 
 type Props = {
   mail: Mail | undefined;
@@ -49,6 +51,23 @@ export function MessageReader({
   onForward,
 }: Props) {
   const [htmlView, setHtmlView] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const bodyHostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mail) return;
+    setHtmlView(hasHtmlBody(mail));
+  }, [mail?.seq]);
+
+  const resizeIframe = () => {
+    const iframe = iframeRef.current;
+    const host = bodyHostRef.current;
+    if (!iframe?.contentDocument || !host) return;
+    const doc = iframe.contentDocument;
+    const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    iframe.style.height = `${Math.max(contentHeight, host.clientHeight)}px`;
+  };
+
   if (!mail) {
     return (
       <div className="flex flex-1 items-center justify-center bg-white text-muted-foreground">
@@ -57,12 +76,15 @@ export function MessageReader({
     );
   }
 
+  const htmlAvailable = hasHtmlBody(mail);
+
   return (
-    <div className="message-reader flex flex-1 flex-col overflow-hidden bg-white">
+    <div className="message-reader flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
       <MessageActionBar
         mail={mail}
         folder={folder}
         pending={pending}
+        htmlView={htmlView}
         onMarkRead={onMarkRead}
         onTrash={onTrash}
         onRestore={onRestore}
@@ -78,7 +100,7 @@ export function MessageReader({
         onViewHtml={() => setHtmlView((v) => !v)}
         onReportPhishing={onReportPhishing}
       />
-      <div className="border-b border-border px-6 py-4">
+      <div className="shrink-0 border-b border-border px-6 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-semibold text-foreground">{mail.subject || "(no subject)"}</h2>
@@ -106,11 +128,40 @@ export function MessageReader({
         </div>
         <AttachmentList attachments={mail.attachments} />
       </div>
-      <div className="flex-1 overflow-auto px-6 py-4">
-        {htmlView && mail.htmlBody ? (
-          <iframe title="HTML message" sandbox="" srcDoc={mail.htmlBody} className="min-h-[320px] w-full rounded-md border border-border" />
+      {htmlAvailable ? (
+        <div className="flex shrink-0 gap-2 border-b border-border px-6 py-2">
+          <Button
+            type="button"
+            variant={htmlView ? "default" : "outline"}
+            className="h-8 text-xs"
+            onClick={() => setHtmlView(true)}
+          >
+            HTML
+          </Button>
+          <Button
+            type="button"
+            variant={!htmlView ? "default" : "outline"}
+            className="h-8 text-xs"
+            onClick={() => setHtmlView(false)}
+          >
+            Plain text
+          </Button>
+        </div>
+      ) : null}
+      <div ref={bodyHostRef} className="min-h-0 flex-1 overflow-auto">
+        {htmlView && htmlAvailable ? (
+          <iframe
+            ref={iframeRef}
+            title="HTML message"
+            sandbox=""
+            srcDoc={wrapHtmlForView(mail.htmlBody!)}
+            className="block w-full border-0 bg-white"
+            onLoad={resizeIframe}
+          />
         ) : (
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{mail.body}</pre>
+          <pre className="whitespace-pre-wrap px-6 py-4 font-sans text-sm leading-relaxed text-foreground">
+            {mail.body || "(no plain text body)"}
+          </pre>
         )}
       </div>
     </div>

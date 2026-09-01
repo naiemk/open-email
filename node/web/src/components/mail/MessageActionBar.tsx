@@ -16,11 +16,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Mail as MailType } from "@/lib/mail";
+import { hasHtmlBody } from "@/lib/mail";
 
 type Props = {
   mail: MailType;
   folder: string;
   pending?: boolean;
+  htmlView?: boolean;
   onMarkRead: (read: boolean) => void;
   onTrash: () => void;
   onRestore?: () => void;
@@ -41,6 +43,7 @@ export function MessageActionBar({
   mail,
   folder,
   pending = false,
+  htmlView = false,
   onMarkRead,
   onTrash,
   onRestore,
@@ -102,8 +105,10 @@ export function MessageActionBar({
               <MenuItem icon={<Printer className="h-4 w-4" />} onClick={() => { onPrint(); setMenuOpen(false); }}>Print</MenuItem>
               <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewDetails(); setMenuOpen(false); }}>View message details</MenuItem>
               <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewHeaders(); setMenuOpen(false); }}>View headers</MenuItem>
-              {mail.htmlBody ? (
-                <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewHtml(); setMenuOpen(false); }}>View HTML</MenuItem>
+              {hasHtmlBody(mail) ? (
+                <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { onViewHtml(); setMenuOpen(false); }}>
+                  {htmlView ? "View plain text" : "View HTML"}
+                </MenuItem>
               ) : null}
               <MenuItem className="text-destructive" onClick={() => { onReportPhishing(); setMenuOpen(false); }}>Report phishing</MenuItem>
             </div>
