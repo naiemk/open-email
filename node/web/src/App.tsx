@@ -29,6 +29,7 @@ import {
   registerPaid,
   type Meta,
 } from "@/lib/api";
+import { relayerHint } from "@/lib/api-fetch";
 import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
@@ -154,7 +155,7 @@ export default function App() {
     try {
       await fn();
     } catch (e) {
-      setError(webAuthnUserError(e));
+      setError(relayerHint(webAuthnUserError(e)));
     } finally {
       setBusy(false);
     }
