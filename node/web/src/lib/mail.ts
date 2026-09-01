@@ -117,7 +117,9 @@ export async function parseRfc822(rawRfc822: string): Promise<{
   attachments: MailAttachment[];
 }> {
   const parsed = await PostalMime.parse(rawRfc822);
-  const attachments: MailAttachment[] = (parsed.attachments ?? []).map((att, i) => ({
+  const attachments: MailAttachment[] = (parsed.attachments ?? [])
+    .filter((att) => !att.mimeType?.toLowerCase().startsWith("text/html"))
+    .map((att, i) => ({
     partId: String(i),
     filename: att.filename || att.mimeType || `attachment-${i + 1}`,
     mimeType: att.mimeType || "application/octet-stream",
@@ -139,6 +141,20 @@ function formatAddress(addr: { name?: string; address?: string } | string): stri
   if (typeof addr === "string") return addr;
   if (addr.name && addr.address) return `${addr.name} <${addr.address}>`;
   return addr.address ?? "";
+}
+
+export function hasHtmlBody(mail: Pick<Mail, "htmlBody">): boolean {
+  return Boolean(mail.htmlBody?.trim());
+}
+
+/** Wrap partial HTML fragments in a document that fills the reader width. */
+export function wrapHtmlForView(html: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
+html,body{margin:0;padding:16px;width:100%;box-sizing:border-box;background:#fff;color:#111;}
+body{min-height:100%;}
+img{max-width:100%!important;height:auto!important;}
+table{max-width:100%!important;}
+</style></head><body>${html}</body></html>`;
 }
 
 export function smtpFrom(domain: string, name: string): string {
