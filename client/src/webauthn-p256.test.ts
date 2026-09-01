@@ -56,6 +56,11 @@ describe("WebAuthn user errors", () => {
     const err = Object.assign(new Error("A request is already pending."), { name: "InvalidStateError" });
     expect(webAuthnUserError(err)).toMatch(/already open/i);
   });
+
+  it("maps AbortError to cancelled", () => {
+    const err = Object.assign(new Error("Aborted"), { name: "AbortError" });
+    expect(webAuthnUserError(err)).toMatch(/cancelled/i);
+  });
 });
 
 function encodeNoneAttestation(x: Uint8Array, y: Uint8Array): Uint8Array {

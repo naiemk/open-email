@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,9 @@ type Props = {
 };
 
 export function RecoveryModal({ open, secret, busy, onSaved }: Props) {
+  const lock = useRef(false);
+  if (!busy) lock.current = false;
+
   return (
     <Dialog open={open} onClose={() => {}}>
       <DialogContent>
@@ -21,8 +25,16 @@ export function RecoveryModal({ open, secret, busy, onSaved }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <pre className="overflow-auto rounded-lg bg-accent p-4 text-xs text-accent-foreground">{secret}</pre>
-          <Button className="w-full" disabled={busy} onClick={onSaved}>
-            I saved it — opt in to this node
+          <Button
+            className="w-full"
+            disabled={busy}
+            onClick={() => {
+              if (busy || lock.current) return;
+              lock.current = true;
+              onSaved();
+            }}
+          >
+            {busy ? "Waiting for passkey…" : "I saved it — opt in to this node"}
           </Button>
         </CardContent>
       </DialogContent>

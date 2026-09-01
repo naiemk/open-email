@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Meta } from "@/lib/api";
 import type { SignupState } from "@/App";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -31,6 +31,7 @@ export function PayModal({
   onMarkPaid,
 }: Props) {
   const [polling, setPolling] = useState(false);
+  const registerLock = useRef(false);
 
   useEffect(() => {
     if (!open || !signup || signup.status === "paid") return;
@@ -39,9 +40,13 @@ export function PayModal({
     const tick = async () => {
       while (alive && signup.status !== "paid") {
         await new Promise((r) => setTimeout(r, 1500));
-        const status = await onPoll();
-        onStatus(status);
-        if (status === "paid") break;
+        try {
+          const status = await onPoll();
+          onStatus(status);
+          if (status === "paid") break;
+        } catch {
+          /* keep polling */
+        }
       }
       if (alive) setPolling(false);
     };
@@ -51,12 +56,22 @@ export function PayModal({
     };
   }, [open, signup?.invoiceId, signup?.status]);
 
+  useEffect(() => {
+    if (!busy) registerLock.current = false;
+  }, [busy]);
+
   if (!signup) return null;
 
   const payUrl = signup.payLink.startsWith("http") ? signup.payLink : `${location.origin}${signup.payLink}`;
 
+  const handleRegister = () => {
+    if (busy || registerLock.current) return;
+    registerLock.current = true;
+    onRegister();
+  };
+
   return (
-    <Dialog open={open} onClose={onClose}>
+    <Dialog open={open} onClose={busy ? () => undefined : onClose}>
       <DialogContent>
         <CardHeader>
           <CardTitle>Activate your mailbox</CardTitle>
@@ -76,8 +91,14 @@ export function PayModal({
           <p className="text-sm">
             Status: <strong>{signup.status}</strong>
             {polling ? " (checking…)" : ""}
+            {busy ? " — waiting for passkey…" : ""}
           </p>
-          <Button variant="outline" className="w-full" onClick={() => window.open(payUrl, "_blank", "noopener")}>
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={busy}
+            onClick={() => window.open(payUrl, "_blank", "noopener")}
+          >
             Open invoice in new tab
           </Button>
           {signup.status !== "paid" && onMarkPaid ? (
@@ -91,8 +112,8 @@ export function PayModal({
             </Button>
           ) : null}
           {signup.status === "paid" ? (
-            <Button className="w-full" disabled={busy} onClick={onRegister}>
-              Register on-chain & continue
+            <Button className="w-full" disabled={busy} onClick={handleRegister}>
+              {busy ? "Waiting for passkey…" : "Register on-chain & continue"}
             </Button>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -100,7 +121,7 @@ export function PayModal({
               confirmed.
             </p>
           )}
-          <Button variant="ghost" className="w-full" onClick={onClose}>
+          <Button variant="ghost" className="w-full" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
         </CardContent>

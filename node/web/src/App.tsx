@@ -3,6 +3,7 @@ import type { Hex } from "viem";
 import { bytesToHex, hexToBytes } from "viem";
 import {
   assertWebAuthn,
+  abortPasskeyCeremony,
   connectPasskey,
   createPasskey,
   encodeRecovery,
@@ -78,6 +79,7 @@ export default function App() {
   const [pairScanOpen, setPairScanOpen] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -149,7 +151,8 @@ export default function App() {
   };
 
   const run = useCallback(async (fn: () => Promise<void>) => {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError("");
     try {
@@ -157,9 +160,10 @@ export default function App() {
     } catch (e) {
       setError(relayerHint(webAuthnUserError(e)));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [busy]);
+  }, []);
 
   const signIn = async (credentialId: Hex, oeId: string, kek: Uint8Array) => {
     if (!meta) return;
@@ -398,6 +402,7 @@ export default function App() {
     });
 
   const logout = () => {
+    abortPasskeyCeremony();
     setSession(null);
     setPendingSession(null);
     setSignup(null);
