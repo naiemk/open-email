@@ -4,6 +4,7 @@ import type { SignupState } from "@/App";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { passkeyLog } from "@/lib/passkey-log";
 
 type Props = {
   open: boolean;
@@ -65,8 +66,18 @@ export function PayModal({
   const payUrl = signup.payLink.startsWith("http") ? signup.payLink : `${location.origin}${signup.payLink}`;
 
   const handleRegister = () => {
-    if (busy || registerLock.current) return;
+    passkeyLog("PayModal:register-click", {
+      busy,
+      registerLock: registerLock.current,
+      status: signup.status,
+      credentialId: signup.credentialId.slice(0, 18),
+    });
+    if (busy || registerLock.current) {
+      passkeyLog("PayModal:register-blocked", { busy, registerLock: registerLock.current });
+      return;
+    }
     registerLock.current = true;
+    passkeyLog("PayModal:register-invoke-onRegister");
     onRegister();
   };
 
