@@ -1,4 +1,7 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SMTPServer } from "smtp-server";
 import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
@@ -50,7 +53,7 @@ export type RunningNode = {
 };
 
 export async function startNode(config: NodeConfig): Promise<RunningNode> {
-  const dataDir = config.dataDir ?? "/data";
+  const dataDir = config.dataDir ?? mkdtempSync(join(tmpdir(), "open-email-node-"));
   const credentialWraps = createCredentialWrapStore(`${dataDir}/credential-wraps.json`);
   const pair = createPairStore();
   const mailboxState = createMailboxStateStore(`${dataDir}/mailbox-state.json`);
