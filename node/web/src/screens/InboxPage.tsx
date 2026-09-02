@@ -97,7 +97,6 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [mobilePane, setMobilePane] = useState<"list" | "reader">("list");
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [openPgpPrivate, setOpenPgpPrivate] = useState<string | undefined>();
   const openPgpPrivateRef = useRef<string | undefined>();
   const [recipientE2ee, setRecipientE2ee] = useState<boolean | null>(null);
   const { getTurnstile, containerRef: turnstileContainerRef } = useTurnstile(meta);
@@ -115,7 +114,6 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         const { ensureOpenPgpIdentity } = await import("@/lib/openpgp-mail");
         const id = await ensureOpenPgpIdentity(session.name, meta.domain, session.dekPrivate);
         openPgpPrivateRef.current = id.privateArmored;
-        setOpenPgpPrivate(id.privateArmored);
       } catch {
         // best-effort WKD publish
       }

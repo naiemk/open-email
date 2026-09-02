@@ -8,7 +8,7 @@ export type OpenPgpHttpOpts = {
   domain: string;
   isOptedIn: (name: string, nodeKey: Hex) => Promise<boolean>;
   nodeKey: Hex;
-  mailboxName: (domain: string, address: string) => string | null;
+  mailboxName: (domain: string, address: string) => string | undefined;
 };
 
 function json(res: ServerResponse, status: number, body: unknown): void {

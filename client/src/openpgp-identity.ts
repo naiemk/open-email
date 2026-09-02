@@ -35,9 +35,11 @@ export type OpenPgpIdentity = {
 
 /** Generate a Curve25519 OpenPGP identity for SMTP E2EE (WKD / Proton). */
 export async function generateOpenPgpIdentity(email: string): Promise<OpenPgpIdentity> {
+  // Legacy Curve25519 (v4) for broad client support (Proton, etc.).
+  // OpenPGP.js v6 renamed the curve to curve25519Legacy; type:'curve25519' is the newer format.
   const { privateKey, publicKey } = await openpgp.generateKey({
     type: "ecc",
-    curve: "curve25519",
+    curve: "curve25519Legacy",
     userIDs: [{ name: email.split("@")[0] || "user", email }],
     format: "armored",
   });

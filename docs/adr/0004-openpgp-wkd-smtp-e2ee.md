@@ -12,7 +12,7 @@ Proton and many PGP clients discover keys via **Web Key Directory (WKD)** and en
 
 ## Decision
 
-1. **Parallel OpenPGP identity** per mailbox email (`name@node-domain`), Curve25519 ECC cert via `openpgp.generateKey`.
+1. **Parallel OpenPGP identity** per mailbox email (`name@node-domain`), legacy Curve25519 ECC cert via `openpgp.generateKey` (`type: 'ecc'`, `curve: 'curve25519Legacy'` for Proton-wide support).
 2. **Private OpenPGP key** is wrapped with the **DEK private** (AES-GCM via existing `wrapDek`) and stored on the node; only a device that can unwrap the DEK can unwrap OpenPGP. The node never holds plaintext OpenPGP private material in use.
 3. **Public OpenPGP key** is stored on the node and served over **WKD direct method** (`/.well-known/openpgpkey/hu/<hash>`).
 4. **Inbound:** SMTP may already carry PGP/MIME ciphertext. The node `sealEnvelope`s opaque RFC822 as today. The **client** `openEnvelope`s, detects OpenPGP, decrypts with the unwrapped OpenPGP private key, then parses MIME.
