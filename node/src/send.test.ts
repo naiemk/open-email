@@ -158,6 +158,31 @@ describe("send to the internet", () => {
     expect(outbound.at(-1)?.data).toContain('filename="note.txt"');
   });
 
+  it("sends mail with a staged attachment id (Gmail-style upload)", async () => {
+    outbound.length = 0;
+    const uploaded = await fetch(
+      `${nodeA.url}/compose-attachment/alice?filename=${encodeURIComponent("note.txt")}&mimeType=text/plain`,
+      { method: "POST", headers: { "content-type": "application/octet-stream" }, body: "hi" },
+    );
+    expect(uploaded.status).toBe(200);
+    const { id } = (await uploaded.json()) as { id: string };
+
+    const res = await fetch(`${nodeA.url}/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "alice",
+        to: "pat@gmail.com",
+        subject: "Staged file",
+        body: "See attached",
+        attachmentIds: [id],
+        turnstile: "ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(outbound.at(-1)?.data).toContain('filename="note.txt"');
+  });
+
   it("submits SMTP-out for an opted-in name to an internet recipient", async () => {
     outbound.length = 0;
     const sent = await sendSmtp({

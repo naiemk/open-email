@@ -12,6 +12,7 @@ import { isLinkedEnsName, mailboxName as resolveMailboxName } from "./mailbox-na
 import { handleSignup, type SignupConfig } from "./signup.ts";
 import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
+import { handleComposeAttachment, createComposeAttachmentStore } from "./compose-attachment.ts";
 import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
 import { handleServicePair } from "./service-pair.ts";
@@ -66,6 +67,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   const credentialWraps = createCredentialWrapStore(`${dataDir}/credential-wraps.json`);
   const pair = createPairStore();
   const mailboxState = createMailboxStateStore(`${dataDir}/mailbox-state.json`);
+  const composeAttachments = createComposeAttachmentStore(dataDir);
   const sendHits = createHitWindow();
   const optHits = createHitWindow();
   const now = () => config.send?.now?.() ?? Date.now();
@@ -270,6 +272,16 @@ async function handleHttp(
     }
     if (
       config.send &&
+      (await handleComposeAttachment(req, url, res, {
+        store: composeAttachments,
+        isOptedIn: (name, nodeKey) => config.registry.isOptedIn(name, nodeKey),
+        nodeKey: config.nodeKey,
+      }))
+    ) {
+      return;
+    }
+    if (
+      config.send &&
       (await handleSend(req, url, res, {
         domain: config.domain,
         nodeKey: config.nodeKey,
@@ -277,6 +289,7 @@ async function handleHttp(
         isOptedIn: (name, nodeKey) => config.registry.isOptedIn(name, nodeKey),
         takeSendSlot,
         ingest: (name, rfc5322, direction) => ingest(config, name, rfc5322, direction),
+        composeAttachments,
       }))
     ) {
       return;

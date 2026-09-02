@@ -112,6 +112,7 @@
   "compose.recipientPlaceholder": "recipient@example.com",
   "compose.writeMessage": "Write your message…",
   "compose.attach": "Attach",
+  "compose.uploading": "Uploading…",
   "compose.sending": "Sending…",
   "compose.send": "Send",
 

@@ -4,6 +4,7 @@ import type { Hex } from "viem";
 import { signDkim, type DkimKey } from "./dkim.ts";
 import { sendSmtp } from "./smtpSend.ts";
 import { buildRfc822, type OutboundAttachment } from "./mime-build.ts";
+import type { ComposeAttachmentStore } from "./compose-attachments.ts";
 
 export type SendConfig = {
   turnstile: { verify: (token: string) => Promise<boolean> };
@@ -64,6 +65,7 @@ export async function handleSend(
     isOptedIn: (name: string, nodeKey: Hex) => Promise<boolean>;
     takeSendSlot: (name: string) => boolean;
     ingest: (name: string, rfc5322: Uint8Array, direction: "in" | "out") => Promise<void>;
+    composeAttachments?: ComposeAttachmentStore;
   },
 ): Promise<boolean> {
   if (req.method !== "POST" || url.pathname !== "/send") return false;
@@ -73,6 +75,7 @@ export async function handleSend(
     subject?: string;
     body?: string;
     turnstile?: string;
+    attachmentIds?: string[];
     attachments?: OutboundAttachment[];
   };
   if (!(await opts.send.turnstile.verify(body.turnstile ?? ""))) {
@@ -94,12 +97,27 @@ export async function handleSend(
     return true;
   }
   const mailFrom = smtpFromAddress(opts.domain, name);
+  let attachments: OutboundAttachment[] | undefined;
+  if (body.attachmentIds?.length) {
+    if (!opts.composeAttachments) {
+      json(res, 500, { error: "attachments unavailable" });
+      return true;
+    }
+    try {
+      attachments = opts.composeAttachments.take(name, body.attachmentIds);
+    } catch {
+      json(res, 400, { error: "invalid attachment" });
+      return true;
+    }
+  } else if (body.attachments?.length) {
+    attachments = body.attachments;
+  }
   const data = buildSignedMessage({
     mailFrom,
     to,
     subject: body.subject ?? "",
     body: body.body ?? "",
-    attachments: body.attachments,
+    attachments,
     dkim: opts.send.dkim,
     t: Math.floor((opts.send.now?.() ?? Date.now()) / 1000),
   });

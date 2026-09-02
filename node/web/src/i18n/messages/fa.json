@@ -113,6 +113,7 @@
   "compose.recipientPlaceholder": "recipient@example.com",
   "compose.writeMessage": "پیام خود را بنویسید…",
   "compose.attach": "پیوست",
+  "compose.uploading": "در حال بارگذاری…",
   "compose.sending": "در حال ارسال…",
   "compose.send": "ارسال",
 

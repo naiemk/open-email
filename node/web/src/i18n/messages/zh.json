@@ -113,6 +113,7 @@
   "compose.recipientPlaceholder": "recipient@example.com",
   "compose.writeMessage": "撰写邮件…",
   "compose.attach": "附件",
+  "compose.uploading": "上传中…",
   "compose.sending": "发送中…",
   "compose.send": "发送",
 

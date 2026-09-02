@@ -113,6 +113,7 @@
   "compose.recipientPlaceholder": "recipient@example.com",
   "compose.writeMessage": "اكتب رسالتك…",
   "compose.attach": "إرفاق",
+  "compose.uploading": "جاري الرفع…",
   "compose.sending": "جارٍ الإرسال…",
   "compose.send": "إرسال",
 

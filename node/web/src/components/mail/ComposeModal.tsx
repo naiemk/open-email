@@ -3,14 +3,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ComposeAttachment } from "@/lib/mail";
+import { deleteComposeAttachment, uploadComposeAttachment } from "@/lib/mail";
 import { useT } from "@/i18n/I18nProvider";
 import type { MessageKey } from "@/i18n/messages";
+import { useState } from "react";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
 
 type Props = {
   open: boolean;
   mode: ComposeMode;
+  mailboxName: string;
   from: string;
   to: string;
   subject: string;
@@ -22,6 +25,7 @@ type Props = {
   onSubject: (v: string) => void;
   onBody: (v: string) => void;
   onAttachments: (attachments: ComposeAttachment[]) => void;
+  onError: (message: string) => void;
   onSend: () => void;
   onClose: () => void;
 };
@@ -36,6 +40,7 @@ const MODE_KEYS: Record<ComposeMode, MessageKey> = {
 export function ComposeModal({
   open,
   mode,
+  mailboxName,
   from,
   to,
   subject,
@@ -47,28 +52,35 @@ export function ComposeModal({
   onSubject,
   onBody,
   onAttachments,
+  onError,
   onSend,
   onClose,
 }: Props) {
   const t = useT();
+  const [uploading, setUploading] = useState(false);
 
   if (!open) return null;
 
   const addFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
+    if (!files?.length || uploading || pending) return;
+    setUploading(true);
+    onError("");
     const next = [...attachments];
-    for (const file of files) {
-      const buf = await file.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (const b of bytes) binary += String.fromCharCode(b);
-      next.push({
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        contentBase64: btoa(binary),
-      });
+    try {
+      for (const file of files) {
+        next.push(await uploadComposeAttachment(mailboxName, file));
+      }
+      onAttachments(next);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : t("errors.sendFailed"));
+    } finally {
+      setUploading(false);
     }
-    onAttachments(next);
+  };
+
+  const removeAttachment = (att: ComposeAttachment) => {
+    void deleteComposeAttachment(mailboxName, att.id);
+    onAttachments(attachments.filter((a) => a.id !== att.id));
   };
 
   return (
@@ -127,15 +139,15 @@ export function ComposeModal({
         />
         {attachments.length > 0 ? (
           <div className="flex shrink-0 flex-wrap gap-2 border-t border-border px-4 py-2">
-            {attachments.map((att, i) => (
-              <span key={`${att.filename}-${i}`} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs">
+            {attachments.map((att) => (
+              <span key={att.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs">
                 <Paperclip className="h-3 w-3" />
                 {att.filename}
                 <button
                   type="button"
                   className="ms-1"
-                  disabled={pending}
-                  onClick={() => onAttachments(attachments.filter((_, j) => j !== i))}
+                  disabled={pending || uploading}
+                  onClick={() => removeAttachment(att)}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -151,10 +163,16 @@ export function ComposeModal({
         <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <label className="flex cursor-pointer items-center gap-2 text-xs text-primary underline">
             <Paperclip className="h-4 w-4" />
-            {t("compose.attach")}
-            <input type="file" multiple className="hidden" disabled={pending} onChange={(e) => void addFiles(e.target.files)} />
+            {uploading ? t("compose.uploading") : t("compose.attach")}
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              disabled={pending || uploading}
+              onChange={(e) => void addFiles(e.target.files)}
+            />
           </label>
-          <Button className="rounded-full px-6" disabled={pending || !to.trim()} onClick={onSend}>
+          <Button className="rounded-full px-6" disabled={pending || uploading || !to.trim()} onClick={onSend}>
             {pending ? (
               t("compose.sending")
             ) : (

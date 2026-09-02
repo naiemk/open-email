@@ -35,10 +35,39 @@ export type Mail = IndexRow & {
 };
 
 export type ComposeAttachment = {
+  id: string;
   filename: string;
   mimeType: string;
-  contentBase64: string;
+  size: number;
 };
+
+export async function uploadComposeAttachment(name: string, file: File): Promise<ComposeAttachment> {
+  const q = new URLSearchParams({
+    filename: file.name,
+    mimeType: file.type || "application/octet-stream",
+  });
+  const res = await fetch(`/compose-attachment/${encodeURIComponent(name)}?${q}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    if (res.status === 413) throw new Error("payload too large");
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (body.error === "too large" || body.error === "attachment_too_large" || body.error === "staging_full") {
+      throw new Error("payload too large");
+    }
+    throw new Error(body.error ?? `Request failed (${res.status})`);
+  }
+  const body = (await res.json()) as ComposeAttachment;
+  return body;
+}
+
+export async function deleteComposeAttachment(name: string, id: string): Promise<void> {
+  await fetch(`/compose-attachment/${encodeURIComponent(name)}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
 
 export async function fetchIndex(name: string, before?: number): Promise<IndexRow[]> {
   const q = before ? `?before=${before}` : "";

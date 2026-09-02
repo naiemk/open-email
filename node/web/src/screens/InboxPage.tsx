@@ -10,6 +10,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import {
   decryptRows,
+  deleteComposeAttachment,
   deleteMailPermanently,
   downloadEml,
   emptyTrash,
@@ -262,12 +263,12 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       const res = await fetch("/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+          body: JSON.stringify({
           name: session.name,
           to,
           subject: composeSubject,
           body: composeBody,
-          attachments: composeAttachments.length ? composeAttachments : undefined,
+          attachmentIds: composeAttachments.length ? composeAttachments.map((a) => a.id) : undefined,
           turnstile,
         }),
       });
@@ -558,6 +559,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       <ComposeModal
         open={composing}
         mode={composeMode}
+        mailboxName={session.name}
         from={smtpFrom(meta.domain, session.name)}
         to={composeTo}
         subject={composeSubject}
@@ -569,9 +571,14 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         onSubject={setComposeSubject}
         onBody={setComposeBody}
         onAttachments={setComposeAttachments}
+        onError={(msg) => setError(localizeError(messages, new Error(msg)))}
         onSend={send}
         onClose={() => {
           if (isPending("send")) return;
+          for (const att of composeAttachments) {
+            void deleteComposeAttachment(session.name, att.id);
+          }
+          setComposeAttachments([]);
           setComposing(false);
         }}
       />

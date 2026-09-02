@@ -113,6 +113,7 @@
   "compose.recipientPlaceholder": "recipient@example.com",
   "compose.writeMessage": "メッセージを入力…",
   "compose.attach": "添付",
+  "compose.uploading": "アップロード中…",
   "compose.sending": "送信中…",
   "compose.send": "送信",
 
