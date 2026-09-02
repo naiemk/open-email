@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "请输入有效的收件人地址",
   "errors.busy": "请稍候——另一项操作正在进行",
   "errors.sendFailed": "发送失败",
+  "errors.payloadTooLarge": "邮件过大 — 请使用较小的附件",
   "errors.requestFailed": "请求失败",
   "errors.relayerDown": "Relayer 不可用 — 注册需要节点网络上的 open-email-api",
   "errors.passkeyRejected": "Passkey 签名在链上被拒绝 — 存储的密钥数据可能已过期。请使用新的 passkey 重新注册。",

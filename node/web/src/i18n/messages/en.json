@@ -218,6 +218,7 @@
   "errors.invalidRecipient": "Enter a valid recipient address",
   "errors.busy": "Please wait — another action is in progress",
   "errors.sendFailed": "Send failed",
+  "errors.payloadTooLarge": "Message too large — try a smaller attachment",
   "errors.requestFailed": "Request failed",
   "errors.relayerDown": "Relayer is down — register needs open-email-api on the node network",
   "errors.passkeyRejected": "Passkey signature rejected on-chain — stored key data may be stale. Sign up again with a fresh passkey.",

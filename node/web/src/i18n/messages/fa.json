@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "آدرس گیرنده معتبر وارد کنید",
   "errors.busy": "لطفاً صبر کنید — عملی دیگر در حال انجام است",
   "errors.sendFailed": "ارسال ناموفق",
+  "errors.payloadTooLarge": "پیام خیلی بزرگ است — پیوست کوچک‌تری امتحان کنید",
   "errors.requestFailed": "درخواست ناموفق",
   "errors.relayerDown": "Relayer در دسترس نیست — ثبت به open-email-api روی شبکه نود نیاز دارد",
   "errors.passkeyRejected": "امضای passkey در on-chain رد شد — داده کلید ذخیره‌شده ممکن است قدیمی باشد. با passkey جدید دوباره ثبت‌نام کنید.",

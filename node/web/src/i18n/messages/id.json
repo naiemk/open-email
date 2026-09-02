@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "Masukkan alamat penerima yang valid",
   "errors.busy": "Harap tunggu — tindakan lain sedang berjalan",
   "errors.sendFailed": "Gagal mengirim",
+  "errors.payloadTooLarge": "Pesan terlalu besar — coba lampiran yang lebih kecil",
   "errors.requestFailed": "Permintaan gagal",
   "errors.relayerDown": "Relayer tidak tersedia — pendaftaran memerlukan open-email-api di jaringan node",
   "errors.passkeyRejected": "Tanda tangan passkey ditolak on-chain — data kunci tersimpan mungkin sudah usang. Daftar lagi dengan passkey baru.",

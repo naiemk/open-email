@@ -1,5 +1,10 @@
 export async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) {
+    if (res.status === 413) throw new Error("payload too large");
+    throw new Error(`Request failed (${res.status})`);
+  }
   let body: T & { error?: string };
   try {
     body = (await res.json()) as T & { error?: string };

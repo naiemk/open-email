@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "Introduce una dirección de destinatario válida",
   "errors.busy": "Espera — otra acción está en curso",
   "errors.sendFailed": "Error al enviar",
+  "errors.payloadTooLarge": "Mensaje demasiado grande — prueba con un adjunto más pequeño",
   "errors.requestFailed": "Error en la solicitud",
   "errors.relayerDown": "El relayer no está disponible — el registro requiere open-email-api en la red del nodo",
   "errors.passkeyRejected": "Firma del passkey rechazada en cadena — los datos de clave almacenados pueden estar obsoletos. Regístrate de nuevo con un passkey nuevo.",

@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "有効な宛先アドレスを入力してください",
   "errors.busy": "お待ちください — 別の操作が進行中です",
   "errors.sendFailed": "送信に失敗しました",
+  "errors.payloadTooLarge": "メッセージが大きすぎます — より小さい添付ファイルをお試しください",
   "errors.requestFailed": "リクエストに失敗しました",
   "errors.relayerDown": "Relayer が停止しています — 登録にはノードネットワーク上の open-email-api が必要です",
   "errors.passkeyRejected": "passkey 署名がオンチェーンで拒否されました — 保存された鍵データが古い可能性があります。新しい passkey で再登録してください。",

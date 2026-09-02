@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "أدخل عنوان مستلم صالحًا",
   "errors.busy": "يرجى الانتظار — هناك إجراء آخر قيد التنفيذ",
   "errors.sendFailed": "فشل الإرسال",
+  "errors.payloadTooLarge": "الرسالة كبيرة جدًا — جرّب مرفقًا أصغر",
   "errors.requestFailed": "فشل الطلب",
   "errors.relayerDown": "Relayer متوقف — التسجيل يتطلب open-email-api على شبكة العقد",
   "errors.passkeyRejected": "توقيع passkey مرفوض على السلسلة — قد تكون بيانات المفتاح المحفوظة قديمة. سجّل من جديد باستخدام passkey جديد.",

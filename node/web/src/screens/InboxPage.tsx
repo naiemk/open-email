@@ -272,8 +272,15 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         }),
       });
       if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        const err = body.error === "turnstile" ? t("errors.turnstileRequired") : body.error ?? t("errors.sendFailed");
+        let err = t("errors.sendFailed");
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.status === 413) {
+          err = t("errors.payloadTooLarge");
+        } else if (ct.includes("application/json")) {
+          const body = (await res.json()) as { error?: string };
+          err =
+            body.error === "turnstile" ? t("errors.turnstileRequired") : body.error ?? err;
+        }
         setError(err);
         return;
       }

@@ -219,6 +219,7 @@
   "errors.invalidRecipient": "Digite um endereço de destinatário válido",
   "errors.busy": "Aguarde — outra ação está em andamento",
   "errors.sendFailed": "Falha no envio",
+  "errors.payloadTooLarge": "Mensagem muito grande — tente um anexo menor",
   "errors.requestFailed": "Falha na solicitação",
   "errors.relayerDown": "Relayer indisponível — registro requer open-email-api na rede do nó",
   "errors.passkeyRejected": "Assinatura do passkey rejeitada on-chain — dados de chave armazenados podem estar desatualizados. Cadastre-se novamente com um passkey novo.",

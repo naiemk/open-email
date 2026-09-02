@@ -18,7 +18,7 @@ const ERROR_MAP: Record<string, MessageKey> = {
   "Grant passkey mismatch": "errors.grantPasskeyMismatch",
   "No mailbox with that id on the registry": "errors.noMailbox",
   "Enter a valid recipient address": "errors.invalidRecipient",
-  "send failed": "errors.sendFailed",
+  "payload too large": "errors.payloadTooLarge",
   "Passkey was not created": "errors.passkeyNotCreated",
   "Passkey cancelled": "errors.passkeyCancelled",
   "Wrong passkey selected": "errors.wrongPasskey",
