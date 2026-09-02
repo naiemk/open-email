@@ -101,6 +101,7 @@
   "toolbar.deleteAll": "Delete all",
 
   "trash.confirmDeleteAll": "Permanently delete all messages in Trash? This cannot be undone.",
+  "compose.new": "New message",
   "compose.reply": "Reply",
   "compose.replyAll": "Reply all",
   "compose.forward": "Forward",
