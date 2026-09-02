@@ -52,3 +52,16 @@ describe("parseRfc822", () => {
     expect(wrapHtmlForView("<p>Hi</p>")).toContain("<!DOCTYPE html>");
   });
 });
+
+describe("previewKind", () => {
+  it("classifies common attachment types", async () => {
+    const { previewKind } = await import("./mail.ts");
+    expect(previewKind({ filename: "a.png", mimeType: "image/png" })).toBe("image");
+    expect(previewKind({ filename: "a.PDF", mimeType: "application/octet-stream" })).toBe("pdf");
+    expect(previewKind({ filename: "notes.txt", mimeType: "text/plain" })).toBe("text");
+    expect(previewKind({ filename: "clip.mp4", mimeType: "video/mp4" })).toBe("video");
+    expect(previewKind({ filename: "doc.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })).toBe(
+      "unsupported",
+    );
+  });
+});

@@ -41,7 +41,21 @@ export type ComposeAttachment = {
   size: number;
 };
 
-export async function uploadComposeAttachment(name: string, file: File): Promise<ComposeAttachment> {
+/** Keep in sync with node/src/compose-attachments.ts */
+export const MAX_COMPOSE_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+export const MAX_COMPOSE_STAGED_BYTES = 25 * 1024 * 1024;
+
+export async function uploadComposeAttachment(
+  name: string,
+  file: File,
+  alreadyStagedBytes = 0,
+): Promise<ComposeAttachment> {
+  if (file.size > MAX_COMPOSE_ATTACHMENT_BYTES) {
+    throw new Error("attachment too large");
+  }
+  if (alreadyStagedBytes + file.size > MAX_COMPOSE_STAGED_BYTES) {
+    throw new Error("staging full");
+  }
   const q = new URLSearchParams({
     filename: file.name,
     mimeType: file.type || "application/octet-stream",
@@ -52,10 +66,12 @@ export async function uploadComposeAttachment(name: string, file: File): Promise
     body: file,
   });
   if (!res.ok) {
-    if (res.status === 413) throw new Error("payload too large");
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (body.error === "too large" || body.error === "attachment_too_large" || body.error === "staging_full") {
-      throw new Error("payload too large");
+    if (body.error === "attachment_too_large" || body.error === "too large" || res.status === 413) {
+      throw new Error("attachment too large");
+    }
+    if (body.error === "staging_full") {
+      throw new Error("staging full");
     }
     throw new Error(body.error ?? `Request failed (${res.status})`);
   }
@@ -92,7 +108,7 @@ export async function patchMailState(
     snoozeUntil?: number | null;
   }>,
 ): Promise<void> {
-  await fetch(`/mail-state/${encodeURIComponent(name)}`, {
+  const res = await fetch(`/mail-state/${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -102,6 +118,10 @@ export async function patchMailState(
       })),
     }),
   });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Request failed (${res.status})`);
+  }
 }
 
 export async function restoreMail(name: string, seq: number): Promise<void> {
@@ -270,8 +290,27 @@ export function isUnread(mail: Pick<Mail, "read" | "direction" | "trashed">): bo
   return mail.direction === "in" && !mail.trashed && !mail.read;
 }
 
+export type PreviewKind = "image" | "pdf" | "text" | "video" | "unsupported";
+
+export function previewKind(att: Pick<MailAttachment, "filename" | "mimeType">): PreviewKind {
+  const mime = att.mimeType.toLowerCase();
+  const ext = att.filename.split(".").pop()?.toLowerCase() ?? "";
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) {
+    return "image";
+  }
+  if (mime === "application/pdf" || ext === "pdf") return "pdf";
+  if (mime.startsWith("text/") || ["txt", "csv", "md", "json", "log"].includes(ext)) return "text";
+  if (mime.startsWith("video/") || ["mp4", "webm", "ogg"].includes(ext)) return "video";
+  return "unsupported";
+}
+
+export function attachmentToBlob(att: MailAttachment): Blob {
+  // Copy bytes so PDF.js cannot detach the mail cache buffer.
+  return new Blob([att.content.slice()], { type: att.mimeType || "application/octet-stream" });
+}
+
 export function downloadAttachment(att: MailAttachment): void {
-  const blob = new Blob([att.content], { type: att.mimeType });
+  const blob = attachmentToBlob(att);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

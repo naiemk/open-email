@@ -19,6 +19,8 @@ const ERROR_MAP: Record<string, MessageKey> = {
   "No mailbox with that id on the registry": "errors.noMailbox",
   "Enter a valid recipient address": "errors.invalidRecipient",
   "payload too large": "errors.payloadTooLarge",
+  "attachment too large": "errors.attachmentTooLarge",
+  "staging full": "errors.stagingFull",
   "Passkey was not created": "errors.passkeyNotCreated",
   "Passkey cancelled": "errors.passkeyCancelled",
   "Wrong passkey selected": "errors.wrongPasskey",

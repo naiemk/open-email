@@ -205,6 +205,20 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     patchSeqs(seqs, { read });
   };
 
+  const markOpened = useCallback(
+    (mail: Mail | undefined) => {
+      if (!mail || mail.direction !== "in" || mail.read || mail.trashed) return;
+      void patchMailState(session.name, [{ seq: mail.seq, read: true }])
+        .then(() => {
+          setMails((prev) => prev.map((m) => (m.seq === mail.seq ? { ...m, read: true } : m)));
+        })
+        .catch((e) => {
+          setError(localizeError(messages, e));
+        });
+    },
+    [session.name, messages],
+  );
+
   const openCompose = (mode: ComposeMode, mail?: Mail) => {
     setComposeMode(mode);
     setComposeAttachments([]);
@@ -232,13 +246,11 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const selectMessage = (seq: number) => {
     setSelected(seq);
     if (isMobile) setMobilePane("reader");
-    const mail = mails.find((m) => m.seq === seq);
-    if (mail && mail.direction === "in" && !mail.read && !mail.trashed) {
-      void patchMailState(session.name, [{ seq, read: true }]).then(() => {
-        setMails((prev) => prev.map((m) => (m.seq === seq ? { ...m, read: true } : m)));
-      });
-    }
   };
+
+  useEffect(() => {
+    markOpened(sel);
+  }, [sel?.seq, sel?.read, sel?.direction, sel?.trashed, markOpened]);
 
   const changeFolder = (f: Folder) => {
     setFolder(f);
@@ -521,7 +533,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
                   folder={folder}
                   pending={isPending("mail")}
                   onBack={isMobile ? () => setMobilePane("list") : undefined}
-                  onMarkRead={(unread) => markRead(!unread, sel ? [sel.seq] : [])}
+                  onMarkRead={(unread) => markRead(unread, sel ? [sel.seq] : [])}
                   onTrash={() => sel && moveToTrash([sel.seq])}
                   onRestore={() => {
                     if (!sel) return;

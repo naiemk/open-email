@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { OutboundAttachment } from "./mime-build.ts";
 
-export const MAX_COMPOSE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_COMPOSE_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 export const MAX_COMPOSE_STAGED_BYTES = 25 * 1024 * 1024;
 const TTL_MS = 24 * 60 * 60 * 1000;
 
