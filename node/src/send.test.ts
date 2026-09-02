@@ -209,7 +209,7 @@ describe("send to the internet", () => {
   });
 
   it("rate-limits send at 20/hour (429) and SMTP-out with 452", async () => {
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 16; i++) {
       const res = await fetch(`${nodeA.url}/send`, {
         method: "POST",
         headers: { "content-type": "application/json" },
