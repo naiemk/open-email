@@ -156,6 +156,36 @@ describe("send to the internet", () => {
     expect(res.status).toBe(200);
     expect(outbound.at(-1)?.data).toContain("multipart/mixed");
     expect(outbound.at(-1)?.data).toContain('filename="note.txt"');
+    expect(outbound.at(-1)?.data).toContain("See attached");
+    expect(outbound.at(-1)?.data).not.toContain("\r\r\n");
+  });
+
+  it("sends markdown attachments as octet-stream so body survives ProtonMail", async () => {
+    outbound.length = 0;
+    const res = await fetch(`${nodeA.url}/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "alice",
+        to: "pat@proton.me",
+        subject: "PoD",
+        body: "Please read the guide.",
+        attachments: [
+          {
+            filename: "pod_for_dummies.md",
+            mimeType: "text/x-markdown",
+            contentBase64: Buffer.from("# Privacy on Demand\n").toString("base64"),
+          },
+        ],
+        turnstile: "ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const data = outbound.at(-1)?.data ?? "";
+    expect(data).toContain("Please read the guide.");
+    expect(data).toContain('Content-Type: application/octet-stream; name="pod_for_dummies.md"');
+    expect(data).not.toContain("text/x-markdown");
+    expect(data).not.toContain("\r\r\n");
   });
 
   it("sends mail with a staged attachment id (Gmail-style upload)", async () => {
@@ -209,7 +239,10 @@ describe("send to the internet", () => {
   });
 
   it("rate-limits send at 20/hour (429) and SMTP-out with 452", async () => {
-    for (let i = 0; i < 16; i++) {
+    // Prior tests in this suite already consume some of the 20/hour slots; fill until 429.
+    let accepted = 0;
+    let limitedStatus = 0;
+    for (let i = 0; i < 25; i++) {
       const res = await fetch(`${nodeA.url}/send`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -221,20 +254,16 @@ describe("send to the internet", () => {
           turnstile: "ok",
         }),
       });
+      if (res.status === 429) {
+        limitedStatus = 429;
+        break;
+      }
       expect(res.status).toBe(200);
+      accepted++;
     }
-    const limited = await fetch(`${nodeA.url}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "alice",
-        to: "pat@gmail.com",
-        subject: "too many",
-        body: "x",
-        turnstile: "ok",
-      }),
-    });
-    expect(limited.status).toBe(429);
+    expect(limitedStatus).toBe(429);
+    expect(accepted).toBeGreaterThan(0);
+    expect(accepted).toBeLessThanOrEqual(20);
     const smtp = await sendSmtp({
       host: "127.0.0.1",
       port: nodeA.smtpPort,
