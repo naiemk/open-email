@@ -43,6 +43,7 @@ chmod +x "$ROOT/dist/start-api.sh" "$ROOT/dist/start-ui.sh"
   echo "FAKE_CHECKOUT=0"
 } >> "$ROOT/dist/.env.ui.example"
 sed -i 's/^UI_MEMORY_LIMIT=32m/UI_MEMORY_LIMIT=512m/' "$ROOT/dist/.env.ui.example"
+sed -i 's/client_max_body_size [^;]*;/client_max_body_size 25m;/' "$ROOT/dist/gateway/nginx.conf"
 if ! grep -q 'command: \["sleep", "infinity"\]' "$ROOT/dist/docker-compose.workers.yml"; then
   sed -i '/extra_hosts:/i\    command: ["sleep", "infinity"]' "$ROOT/dist/docker-compose.workers.yml"
 fi
@@ -67,7 +68,7 @@ cat >> "$ROOT/dist/README.md" <<'EOF'
 - **api** is the **relayer** (vps-edge only; not published on :8080).
 - **ui** is the **node** (HTTPS via host gateway; SMTP `0.0.0.0:25`).
 - Gateway `sites[]` send both `/` and `/api/` to `open-email-ui` so Turnstile/opt rate limits stay on the **node**.
-- Gateway default `client_max_body_size` is **25m** (supports compose attachments). Reload nginx after updating config.
+- Gateway default `client_max_body_size` is **25m** (supports compose attachments). Reload nginx after updating `dist/gateway/nginx.conf`.
 - Images: `ghcr.io/naiemk/open-email-api:main` and `ghcr.io/naiemk/open-email-ui:main`.
 - Skip `install-nodes` only if you do not want the idle worker; SMTP and **DAL** live on the UI container.
 EOF
