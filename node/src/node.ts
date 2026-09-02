@@ -169,7 +169,17 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   });
 
   const http = createHttpServer((req, res) => {
-    void handleHttp(req, res, config, credentialWraps, pair, mailboxState, takeSendSlot, takeOptSlot);
+    void handleHttp(
+      req,
+      res,
+      config,
+      credentialWraps,
+      pair,
+      mailboxState,
+      composeAttachments,
+      takeSendSlot,
+      takeOptSlot,
+    );
   });
   const httpPort = await new Promise<number>((resolve, reject) => {
     http.listen(config.httpPort ?? 0, config.bindHost ?? "127.0.0.1", () => {
@@ -258,6 +268,7 @@ async function handleHttp(
   credentialWraps: CredentialWrapStore,
   pair: PairStore,
   mailboxState: MailboxStateStore,
+  composeAttachments: ComposeAttachmentStore,
   takeSendSlot: (name: string) => boolean,
   takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
