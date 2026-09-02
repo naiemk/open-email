@@ -11,6 +11,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -68,6 +69,7 @@ describe("cross-node service pair", () => {
         const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
         return { dekPublic, wrappedDek };
       },
+      mailboxGeneration: (name: string) => mailboxGenerationOf(stack, name),
     };
     nodeA = await startNode({
       domain: "node-a.test",

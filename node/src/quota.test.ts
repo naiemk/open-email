@@ -6,6 +6,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -69,6 +70,7 @@ describe("index quota and trash", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
   });

@@ -8,6 +8,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../relayer/src/anvil.ts";
@@ -85,6 +86,7 @@ export async function startDevServer(port = 8787): Promise<DevServer> {
         const [, , dp, wd] = await nameRecordOf(stack, n);
         return { dekPublic: dp, wrappedDek: wd };
       },
+      mailboxGeneration: (n) => mailboxGenerationOf(stack, n),
     },
     signup: {
       relayerUrl: relayer.url,

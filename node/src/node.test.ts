@@ -9,6 +9,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -63,6 +64,7 @@ describe("headless mail through node A", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
   });

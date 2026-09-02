@@ -51,6 +51,30 @@ export const registryAbi = [
   },
   {
     type: "function",
+    name: "mailboxGeneration",
+    stateMutability: "view",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "nameExists",
+    stateMutability: "view",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setEnsBridge",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "ensClaim_", type: "address" },
+      { name: "crossDomainMessenger_", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "register",
     stateMutability: "nonpayable",
     inputs: [

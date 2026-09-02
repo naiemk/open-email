@@ -73,6 +73,7 @@ describe.skipIf(!env)("Sepolia first-receive seam", { timeout: 180_000 }, () => 
           const [, , dekPublic, wrappedDek] = await nameRecordOf(handle, n);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
   }, 180_000);

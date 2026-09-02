@@ -11,6 +11,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -62,6 +63,7 @@ describe("send to the internet", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
       send: {
         turnstile: { verify: async (token) => token === "ok" },
@@ -277,6 +279,7 @@ describe("outbound storage cap", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
       send: {
         turnstile: { verify: async (token) => token === "ok" },

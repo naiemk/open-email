@@ -17,12 +17,28 @@ A registry **name** that contains no `.`, so it cannot collide with ENS.
 _Avoid_: username, handle, subname, open-email ENS
 
 **Linked ENS**:
-An ENS string recorded in the **registry** after the ENS holder proves control. The ENS NFT never moves.
+An ENS `.eth` 2LD string recorded in the **registry** after the current NFT controller **claims** it. The NFT is not custodied and can transfer; **claim** and **vacate** follow the current controller.
 _Avoid_: deposited ENS, custodied ENS, minted .eth
 
+**Claim**:
+An L1 attestation that the current ENS NFT controller binds a **linked ENS** to a **controller** and `dekPublic` as a new **generation**. Not available on a **node** signup form.
+_Avoid_: register, sync, signup
+
+**Vacate**:
+An L1 attestation that a **linked ENS** is unbound because the NFT moved to a new controller. Does not create a **DEK** or grant the new holder the old mail.
+_Avoid_: sync, opt-out, delete
+
+**Generation**:
+The epoch of a **mailbox** under a **name**. **Index** rows and **opt-in** are valid only for the current **generation**.
+_Avoid_: nonce, version, session
+
+**EnsClaim**:
+The L1 contract that performs **claim** and **vacate** and messages the Base **registry**. Not the **registry**.
+_Avoid_: L1 registry, ENS registrar
+
 **Registry**:
-The on-chain open-email contract that maps **name** → user (WebAuthn) and records node registration and opt-in/out.
-_Avoid_: ENS registrar, ENS registry (different contracts), user database
+The Base on-chain contract that maps **name** → user (WebAuthn) and records node registration and opt-in/out. **OE ids** register here; **linked ENS** names are applied only via **EnsClaim** messenger writes.
+_Avoid_: ENS registrar, ENS registry (different contracts), user database, L1 mailbox
 
 **Controller**:
 A WebAuthn P-256 key authorized to sign registry writes (`optIn`, `optOut`, `linkNode`, `removeController`) for a **name**. A **name** may have several; the first is set at `register`.
@@ -65,7 +81,7 @@ Storage plus index: content-addressed blobs (IPFS or similar) and the **index**.
 _Avoid_: gateway database, stateless storage
 
 **Index**:
-The ordered log of `(name, time, CID, size, direction)` plus a per-**name** `total_size`. `direction` is `in` or `out`. SMTP **nodes** write to it; they do not own it. `size` is sealed-envelope bytes.
+The ordered log of `(name, generation, time, CID, size, direction)` plus a per-**mailbox** `total_size` (current **generation** only). `direction` is `in` or `out`. SMTP **nodes** write to it; they do not own it. `size` is sealed-envelope bytes.
 _Avoid_: mailbox SQLite, IMAP store, user (the key is **name**)
 
 **Trash**:

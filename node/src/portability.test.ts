@@ -9,6 +9,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -67,6 +68,7 @@ describe("two-node portable mailbox", () => {
         const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
         return { dekPublic, wrappedDek };
       },
+      mailboxGeneration: (name: string) => mailboxGenerationOf(stack, name),
     };
     nodeA = await startNode({
       domain: "node-a.test",

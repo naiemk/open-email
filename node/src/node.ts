@@ -8,6 +8,7 @@ import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
 import { createCredentialWrapStore, type CredentialWrapStore } from "./credential-wraps.ts";
+import { isLinkedEnsName, mailboxName as resolveMailboxName } from "./mailbox-name.ts";
 import { handleSignup, type SignupConfig } from "./signup.ts";
 import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
@@ -26,6 +27,10 @@ export type NodeConfig = {
   registry: {
     isOptedIn: (name: string, nodeKey: Hex) => Promise<boolean>;
     nameRecord: (name: string) => Promise<{ dekPublic: Hex; wrappedDek: Hex }>;
+    mailboxGeneration: (name: string) => Promise<number>;
+  };
+  ensGate?: {
+    allowsReceive: (name: string) => Promise<boolean>;
   };
   blobs: BlobStore;
   index: MailIndex;
@@ -70,27 +75,29 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
     onRcptTo(address, session, callback) {
-      const rcptName = mailboxName(config, address.address);
+      const rcptName = resolveMailboxName(config.domain, address.address);
       if (rcptName) {
-        void config.registry.isOptedIn(rcptName, config.nodeKey).then((ok) => {
+        void canReceive(config, rcptName).then((ok) => {
           if (!ok) {
             callback(smtpError("No such user here", 550));
             return;
           }
-          if (config.index.totalSize(rcptName) >= config.index.cap) {
-            callback(smtpError("Insufficient storage", 452));
-            return;
-          }
-          callback();
+          void config.registry.mailboxGeneration(rcptName).then((generation) => {
+            if (config.index.totalSize(rcptName, generation) >= config.index.cap) {
+              callback(smtpError("Insufficient storage", 452));
+              return;
+            }
+            callback();
+          });
         });
         return;
       }
       const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
         ? session.envelope.mailFrom.address
         : "";
-      const fromName = mailboxName(config, mailFrom);
+      const fromName = resolveMailboxName(config.domain, mailFrom);
       if (fromName && config.send) {
-        void config.registry.isOptedIn(fromName, config.nodeKey).then((ok) => {
+        void canReceive(config, fromName).then((ok) => {
           if (!ok) {
             callback(smtpError("No such user here", 550));
             return;
@@ -111,7 +118,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
           callback(new Error("no recipient"));
           return;
         }
-        const rcptName = mailboxName(config, rcpt);
+        const rcptName = resolveMailboxName(config.domain, rcpt);
         if (rcptName) {
           void ingest(config, rcptName, rfc5322, "in")
             .then(() => callback())
@@ -121,7 +128,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
         const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
           ? session.envelope.mailFrom.address
           : "";
-        const fromName = mailboxName(config, mailFrom);
+        const fromName = resolveMailboxName(config.domain, mailFrom);
         if (!fromName || !config.send) {
           callback(smtpError("No such user here", 550));
           return;
@@ -190,41 +197,42 @@ async function ingest(
   rfc5322: Uint8Array,
   direction: "in" | "out",
 ): Promise<void> {
-  const record = await config.registry.nameRecord(name);
+  const [record, generation] = await Promise.all([
+    config.registry.nameRecord(name),
+    config.registry.mailboxGeneration(name),
+  ]);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
   const size = blob.byteLength;
-  if (config.index.totalSize(name) + size > config.index.cap) {
+  if (config.index.totalSize(name, generation) + size > config.index.cap) {
     throw smtpError("Insufficient storage", 452);
   }
   const cid = await config.blobs.pin(blob);
   const time = Math.floor(Date.now() / 1000);
   await config.index.append({
     name,
+    generation,
     time,
     cid,
     size,
     direction,
     nodeKey: config.nodeKey,
-    signature: signIndexWrite(config.nodeSecret, name, time, cid, size, direction),
+    signature: signIndexWrite(config.nodeSecret, name, generation, time, cid, size, direction),
   });
+}
+
+async function canReceive(config: NodeConfig, name: string): Promise<boolean> {
+  if (!(await config.registry.isOptedIn(name, config.nodeKey))) return false;
+  if (isLinkedEnsName(name) && config.ensGate) {
+    if (!(await config.ensGate.allowsReceive(name))) return false;
+  }
+  return true;
 }
 
 function smtpError(message: string, responseCode: number): Error {
   return Object.assign(new Error(message), { responseCode });
 }
 
-/** SMTP `{oe-id}@testnet.crypted.email` maps to registry name `{oe-id}.testnet`. */
-function mailboxName(config: NodeConfig, address: string): string | undefined {
-  const at = address.lastIndexOf("@");
-  const local = (at === -1 ? address : address.slice(0, at)).toLowerCase();
-  const host = (at === -1 ? "" : address.slice(at + 1)).toLowerCase();
-  if (host !== config.domain.toLowerCase()) return undefined;
-  if (config.domain.toLowerCase() === "testnet.crypted.email") {
-    if (local.includes(".")) return undefined;
-    return `${local}.testnet`;
-  }
-  return local;
-}
+export { resolveMailboxName as mailboxName };
 
 function permanentlyDelete(
   config: NodeConfig,
@@ -330,7 +338,8 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      const newestFirst = [...config.index.list(name)]
+      const generation = await config.registry.mailboxGeneration(name);
+      const newestFirst = [...config.index.list(name, generation)]
         .reverse()
         .map((row) => mailboxState.mergeRow(name, row));
       const before = Number(url.searchParams.get("before") ?? "");
@@ -377,7 +386,8 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
       const name = decodeURIComponent(url.pathname.slice("/storage/".length));
-      const total_size = config.index.totalSize(name);
+      const generation = await config.registry.mailboxGeneration(name);
+      const total_size = config.index.totalSize(name, generation);
       json(res, 200, {
         total_size,
         cap: config.index.cap,
@@ -425,7 +435,8 @@ async function handleHttp(
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {
       const cid = decodeURIComponent(url.pathname.slice("/blobs/".length));
       const name = url.searchParams.get("name") ?? "";
-      if (!name || !config.index.list(name).some((row) => row.cid === cid)) {
+      const generation = name ? await config.registry.mailboxGeneration(name) : 0;
+      if (!name || !config.index.list(name, generation).some((row) => row.cid === cid)) {
         json(res, 404, { error: "unknown cid" });
         return;
       }

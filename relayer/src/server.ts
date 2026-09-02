@@ -10,7 +10,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry, type Chain } from "viem/chains";
-import { nameRecordOf, nodeOf } from "./anvil.ts";
+import { nameRecordOf, nodeOf, mailboxGenerationOf } from "./anvil.ts";
 import { registryAbi } from "./abi.ts";
 
 export type RelayerConfig = {
@@ -119,8 +119,9 @@ async function handle(
     if (req.method === "GET" && url.pathname.startsWith("/names/")) {
       const name = decodeURIComponent(url.pathname.slice("/names/".length));
       const [qx, qy, dekPublic, wrappedDek] = await nameRecordOf(ctx, name);
+      const mailboxGeneration = await mailboxGenerationOf(ctx, name);
       const exists = qx !== `0x${"0".repeat(64)}` && dekPublic !== "0x";
-      return json(res, 200, { exists, qx, qy, dekPublic, wrappedDek });
+      return json(res, 200, { exists, qx, qy, dekPublic, wrappedDek, mailboxGeneration });
     }
     if (req.method === "GET" && url.pathname.startsWith("/nodes/")) {
       const nodeKey = url.pathname.slice("/nodes/".length) as Hex;

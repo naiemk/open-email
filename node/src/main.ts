@@ -71,6 +71,12 @@ await startNode({
       const body = (await res.json()) as { dekPublic: Hex; wrappedDek: Hex };
       return { dekPublic: body.dekPublic, wrappedDek: body.wrappedDek };
     },
+    mailboxGeneration: async (name) => {
+      const res = await fetch(`${relayerUrl}/names/${encodeURIComponent(name)}`);
+      if (!res.ok) return 0;
+      const body = (await res.json()) as { mailboxGeneration?: number };
+      return body.mailboxGeneration ?? 0;
+    },
   },
   signup: {
     relayerUrl,

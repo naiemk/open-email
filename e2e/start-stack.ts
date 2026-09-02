@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { bytesToHex, type Hex } from "viem";
-import { ensureRegistryBuilt, startAnvilStack, isOptedIn, nameRecordOf } from "../relayer/src/anvil.ts";
+import { ensureRegistryBuilt, startAnvilStack, isOptedIn, nameRecordOf, mailboxGenerationOf } from "../relayer/src/anvil.ts";
 import { registerNodeViaRelayer, registerViaRelayer, optInViaRelayer } from "../relayer/src/ops.ts";
 import { startRelayer, type RunningRelayer } from "../relayer/src/server.ts";
 import { ANVIL_PRIVATE_KEY } from "../relayer/src/anvil.ts";
@@ -36,6 +36,7 @@ const registry = {
     const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
     return { dekPublic, wrappedDek };
   },
+  mailboxGeneration: (name: string) => mailboxGenerationOf(stack, name),
 };
 
 const uiBuilt = existsSync(join(process.cwd(), "node/web/dist/index.html"));
