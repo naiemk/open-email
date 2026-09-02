@@ -73,9 +73,10 @@ await startNode({
     },
     mailboxGeneration: async (name) => {
       const res = await fetch(`${relayerUrl}/names/${encodeURIComponent(name)}`);
-      if (!res.ok) return 0;
+      if (!res.ok) return 1;
       const body = (await res.json()) as { mailboxGeneration?: number };
-      return body.mailboxGeneration ?? 0;
+      const gen = body.mailboxGeneration ?? 1;
+      return gen > 0 ? gen : 1;
     },
   },
   signup: {

@@ -27,6 +27,11 @@ export type IndexWrite = {
 
 export const STORAGE_CAP = 5 * 1024 * 1024;
 
+/** Registry may return 0 for legacy mailboxes; index rows default to generation 1. */
+export function normalizeIndexGeneration(generation: number): number {
+  return generation > 0 ? generation : 1;
+}
+
 export type MailIndex = {
   cap: number;
   append: (write: IndexWrite) => Promise<IndexEntry>;

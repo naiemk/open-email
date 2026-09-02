@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMailIndex } from "./indexLog.ts";
+import { createMailIndex, normalizeIndexGeneration } from "./indexLog.ts";
 import { signIndexWrite } from "./indexLog.ts";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex, type Hex } from "viem";
@@ -41,5 +41,11 @@ describe("index generation", () => {
     expect(index.list("vitalik.eth", 2)).toHaveLength(1);
     expect(index.totalSize("vitalik.eth", 1)).toBe(100);
     expect(index.totalSize("vitalik.eth", 2)).toBe(50);
+  });
+
+  it("normalizeIndexGeneration treats 0 as legacy generation 1", () => {
+    expect(normalizeIndexGeneration(0)).toBe(1);
+    expect(normalizeIndexGeneration(1)).toBe(1);
+    expect(normalizeIndexGeneration(2)).toBe(2);
   });
 });

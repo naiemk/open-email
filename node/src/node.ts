@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { SMTPServer } from "smtp-server";
 import { hexToBytes, type Hex } from "viem";
 import { sealEnvelope } from "../../client/src/envelope.ts";
-import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
+import { signIndexWrite, type MailIndex, normalizeIndexGeneration } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
 import { createCredentialWrapStore, type CredentialWrapStore } from "./credential-wraps.ts";
 import { isLinkedEnsName, mailboxName as resolveMailboxName } from "./mailbox-name.ts";
@@ -83,7 +83,8 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
             return;
           }
           void config.registry.mailboxGeneration(rcptName).then((generation) => {
-            if (config.index.totalSize(rcptName, generation) >= config.index.cap) {
+            const gen = normalizeIndexGeneration(generation);
+            if (config.index.totalSize(rcptName, gen) >= config.index.cap) {
               callback(smtpError("Insufficient storage", 452));
               return;
             }
@@ -197,10 +198,11 @@ async function ingest(
   rfc5322: Uint8Array,
   direction: "in" | "out",
 ): Promise<void> {
-  const [record, generation] = await Promise.all([
+  const [record, rawGeneration] = await Promise.all([
     config.registry.nameRecord(name),
     config.registry.mailboxGeneration(name),
   ]);
+  const generation = normalizeIndexGeneration(rawGeneration);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
   const size = blob.byteLength;
   if (config.index.totalSize(name, generation) + size > config.index.cap) {
@@ -338,7 +340,7 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      const generation = await config.registry.mailboxGeneration(name);
+      const generation = normalizeIndexGeneration(await config.registry.mailboxGeneration(name));
       const newestFirst = [...config.index.list(name, generation)]
         .reverse()
         .map((row) => mailboxState.mergeRow(name, row));
@@ -386,7 +388,7 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
       const name = decodeURIComponent(url.pathname.slice("/storage/".length));
-      const generation = await config.registry.mailboxGeneration(name);
+      const generation = normalizeIndexGeneration(await config.registry.mailboxGeneration(name));
       const total_size = config.index.totalSize(name, generation);
       json(res, 200, {
         total_size,
@@ -435,7 +437,9 @@ async function handleHttp(
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {
       const cid = decodeURIComponent(url.pathname.slice("/blobs/".length));
       const name = url.searchParams.get("name") ?? "";
-      const generation = name ? await config.registry.mailboxGeneration(name) : 0;
+      const generation = name
+        ? normalizeIndexGeneration(await config.registry.mailboxGeneration(name))
+        : 1;
       if (!name || !config.index.list(name, generation).some((row) => row.cid === cid)) {
         json(res, 404, { error: "unknown cid" });
         return;
