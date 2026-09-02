@@ -63,6 +63,7 @@
   "mail.direction": "方向",
   "mail.sequence": "シーケンス",
   "mail.attachments": "添付ファイル",
+  "mail.e2ee": "エンドツーエンド暗号化",
   "mail.preview": "プレビュー",
   "mail.download": "ダウンロード",
   "mail.previewUnsupported": "このファイル形式ではプレビューできません。",
@@ -121,6 +122,8 @@
   "compose.uploading": "アップロード中…",
   "compose.sending": "送信中…",
   "compose.send": "送信",
+  "compose.e2ee": "宛先の鍵が見つかりました — この送信はエンドツーエンドで暗号化されます（OpenPGP）。",
+  "compose.notE2ee": "宛先の OpenPGP 鍵がありません — この送信はエンドツーエンド暗号化されません。",
 
   "settings.title": "設定",
   "settings.account": "アカウント",

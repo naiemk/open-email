@@ -63,6 +63,7 @@
   "mail.direction": "الاتجاه",
   "mail.sequence": "التسلسل",
   "mail.attachments": "المرفقات",
+  "mail.e2ee": "مشفّر من طرف إلى طرف",
   "mail.preview": "معاينة",
   "mail.download": "تنزيل",
   "mail.previewUnsupported": "المعاينة غير متاحة لهذا النوع من الملفات.",
@@ -121,6 +122,8 @@
   "compose.uploading": "جاري الرفع…",
   "compose.sending": "جارٍ الإرسال…",
   "compose.send": "إرسال",
+  "compose.e2ee": "تم العثور على مفتاح المستلم — سيكون هذا الإرسال مشفّرًا من طرف إلى طرف (OpenPGP).",
+  "compose.notE2ee": "لا يوجد مفتاح OpenPGP للمستلم — هذا الإرسال غير مشفّر من طرف إلى طرف.",
 
   "settings.title": "الإعدادات",
   "settings.account": "الحساب",

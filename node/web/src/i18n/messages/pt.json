@@ -63,6 +63,7 @@
   "mail.direction": "Direção",
   "mail.sequence": "Sequência",
   "mail.attachments": "Anexos",
+  "mail.e2ee": "Criptografado de ponta a ponta",
   "mail.preview": "Visualizar",
   "mail.download": "Baixar",
   "mail.previewUnsupported": "Visualização não disponível para este tipo de arquivo.",
@@ -121,6 +122,8 @@
   "compose.uploading": "Enviando…",
   "compose.sending": "Enviando…",
   "compose.send": "Enviar",
+  "compose.e2ee": "Chave do destinatário encontrada — este envio será criptografado de ponta a ponta (OpenPGP).",
+  "compose.notE2ee": "Nenhuma chave OpenPGP para o destinatário — este envio não está criptografado de ponta a ponta.",
 
   "settings.title": "Configurações",
   "settings.account": "Conta",

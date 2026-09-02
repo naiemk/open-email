@@ -63,6 +63,7 @@
   "mail.direction": "方向",
   "mail.sequence": "序号",
   "mail.attachments": "附件",
+  "mail.e2ee": "端到端加密",
   "mail.preview": "预览",
   "mail.download": "下载",
   "mail.previewUnsupported": "此文件类型不支持预览。",
@@ -121,6 +122,8 @@
   "compose.uploading": "上传中…",
   "compose.sending": "发送中…",
   "compose.send": "发送",
+  "compose.e2ee": "已找到收件人公钥 — 此次发送将进行端到端加密（OpenPGP）。",
+  "compose.notE2ee": "收件人没有 OpenPGP 公钥 — 此次发送未进行端到端加密。",
 
   "settings.title": "设置",
   "settings.account": "账户",

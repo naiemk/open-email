@@ -32,6 +32,7 @@ export type Mail = IndexRow & {
   rawRfc822: string;
   htmlBody?: string;
   attachments: MailAttachment[];
+  openPgpEncrypted?: boolean;
 };
 
 export type ComposeAttachment = {
@@ -39,6 +40,8 @@ export type ComposeAttachment = {
   filename: string;
   mimeType: string;
   size: number;
+  /** Retained client-side for OpenPGP outbound encrypt; never re-uploaded. */
+  contentBase64?: string;
 };
 
 /** Keep in sync with node/src/compose-attachments.ts */
@@ -76,7 +79,10 @@ export async function uploadComposeAttachment(
     throw new Error(body.error ?? `Request failed (${res.status})`);
   }
   const body = (await res.json()) as ComposeAttachment;
-  return body;
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (const b of buf) binary += String.fromCharCode(b);
+  return { ...body, contentBase64: btoa(binary) };
 }
 
 export async function deleteComposeAttachment(name: string, id: string): Promise<void> {
@@ -149,13 +155,22 @@ export async function decryptRows(
   rows: IndexRow[],
   dekPrivate: Uint8Array,
   decryptFailedBody = "Could not decrypt this message.",
+  openPgpPrivateArmored?: string,
 ): Promise<Mail[]> {
   const mails: Mail[] = [];
   for (const row of rows) {
     try {
       const blob = await fetchBlob(name, row.cid);
-      const rawRfc822 = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
-      mails.push({ ...row, ...(await parseRfc822(rawRfc822)) });
+      let rawRfc822 = new TextDecoder().decode(await openEnvelope(dekPrivate, name, blob));
+      let openPgpEncrypted = false;
+      if (openPgpPrivateArmored) {
+        const { looksLikeOpenPgpMessage, decryptOpenPgpRfc822 } = await import("@/lib/openpgp-mail");
+        if (looksLikeOpenPgpMessage(rawRfc822)) {
+          rawRfc822 = await decryptOpenPgpRfc822(rawRfc822, openPgpPrivateArmored);
+          openPgpEncrypted = true;
+        }
+      }
+      mails.push({ ...row, ...(await parseRfc822(rawRfc822)), openPgpEncrypted });
     } catch {
       mails.push({
         ...row,
