@@ -67,8 +67,11 @@ export function ComposeModal({
     onError("");
     const next = [...attachments];
     try {
+      let stagedBytes = next.reduce((sum, a) => sum + a.size, 0);
       for (const file of files) {
-        next.push(await uploadComposeAttachment(mailboxName, file));
+        const uploaded = await uploadComposeAttachment(mailboxName, file, stagedBytes);
+        next.push(uploaded);
+        stagedBytes += uploaded.size;
       }
       onAttachments(next);
     } catch (e) {
