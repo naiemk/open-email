@@ -13,6 +13,7 @@ import { handleSignup, type SignupConfig } from "./signup.ts";
 import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
 import { handleComposeAttachment, createComposeAttachmentStore } from "./compose-attachment.ts";
+import type { ComposeAttachmentStore } from "./compose-attachments.ts";
 import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
 import { handleServicePair } from "./service-pair.ts";
