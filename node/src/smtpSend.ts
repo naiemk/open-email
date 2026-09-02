@@ -28,12 +28,19 @@ export async function sendSmtp(opts: {
     return { rcptCode: rcpt.code, rcptLine: rcpt.line, dataCode: 0 };
   }
   await expectCode(socket, "DATA", 354);
-  const body = opts.data.replace(/\n/g, "\r\n").replace(/^\./gm, "..");
+  // Normalize to CRLF without doubling (\n → \r\n on already-CRLF messages breaks MIME multipart).
+  const body = normalizeSmtpData(opts.data);
   socket.write(`${body}\r\n.\r\n`);
   const data = await readReply(socket);
   await command(socket, "QUIT").catch(() => undefined);
   socket.end();
   return { rcptCode: rcpt.code, rcptLine: rcpt.line, dataCode: data.code };
+}
+
+/** RFC 5321 DATA payload: CRLF lines + dot-stuffing. */
+export function normalizeSmtpData(data: string): string {
+  const crlf = data.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n/g, "\r\n");
+  return crlf.replace(/^\./gm, "..");
 }
 
 function onceConnect(socket: Socket): Promise<void> {

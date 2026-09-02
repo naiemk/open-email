@@ -156,6 +156,36 @@ describe("send to the internet", () => {
     expect(res.status).toBe(200);
     expect(outbound.at(-1)?.data).toContain("multipart/mixed");
     expect(outbound.at(-1)?.data).toContain('filename="note.txt"');
+    expect(outbound.at(-1)?.data).toContain("See attached");
+    expect(outbound.at(-1)?.data).not.toContain("\r\r\n");
+  });
+
+  it("sends markdown attachments as octet-stream so body survives ProtonMail", async () => {
+    outbound.length = 0;
+    const res = await fetch(`${nodeA.url}/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "alice",
+        to: "pat@proton.me",
+        subject: "PoD",
+        body: "Please read the guide.",
+        attachments: [
+          {
+            filename: "pod_for_dummies.md",
+            mimeType: "text/x-markdown",
+            contentBase64: Buffer.from("# Privacy on Demand\n").toString("base64"),
+          },
+        ],
+        turnstile: "ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const data = outbound.at(-1)?.data ?? "";
+    expect(data).toContain("Please read the guide.");
+    expect(data).toContain('Content-Type: application/octet-stream; name="pod_for_dummies.md"');
+    expect(data).not.toContain("text/x-markdown");
+    expect(data).not.toContain("\r\r\n");
   });
 
   it("sends mail with a staged attachment id (Gmail-style upload)", async () => {
