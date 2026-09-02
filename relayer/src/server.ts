@@ -10,7 +10,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry, type Chain } from "viem/chains";
-import { nameRecordOf } from "./anvil.ts";
+import { nameRecordOf, nodeOf, mailboxGenerationOf } from "./anvil.ts";
 import { registryAbi } from "./abi.ts";
 
 export type RelayerConfig = {
@@ -119,7 +119,50 @@ async function handle(
     if (req.method === "GET" && url.pathname.startsWith("/names/")) {
       const name = decodeURIComponent(url.pathname.slice("/names/".length));
       const [qx, qy, dekPublic, wrappedDek] = await nameRecordOf(ctx, name);
-      return json(res, 200, { qx, qy, dekPublic, wrappedDek });
+      const mailboxGeneration = await mailboxGenerationOf(ctx, name);
+      const exists = qx !== `0x${"0".repeat(64)}` && dekPublic !== "0x";
+      return json(res, 200, { exists, qx, qy, dekPublic, wrappedDek, mailboxGeneration });
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/nodes/")) {
+      const nodeKey = url.pathname.slice("/nodes/".length) as Hex;
+      const domain = await nodeOf(ctx, nodeKey);
+      return json(res, 200, { domain, nodeKey });
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/invite-used/")) {
+      const inviteId = url.pathname.slice("/invite-used/".length) as Hex;
+      const used = await ctx.publicClient.readContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "inviteUsed",
+        args: [inviteId],
+      });
+      return json(res, 200, { used });
+    }
+    if (req.method === "GET" && url.pathname === "/link-challenge") {
+      const name = url.searchParams.get("name") ?? "";
+      const nodeKey = url.searchParams.get("nodeKey") as Hex;
+      const newQx = url.searchParams.get("newQx") as Hex;
+      const newQy = url.searchParams.get("newQy") as Hex;
+      const inviteId = url.searchParams.get("inviteId") as Hex;
+      const challenge = await ctx.publicClient.readContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "linkNodeChallenge",
+        args: [name, nodeKey, newQx, newQy, inviteId],
+      });
+      return json(res, 200, { challenge });
+    }
+    if (req.method === "GET" && url.pathname === "/remove-controller-challenge") {
+      const name = url.searchParams.get("name") ?? "";
+      const qx = url.searchParams.get("qx") as Hex;
+      const qy = url.searchParams.get("qy") as Hex;
+      const challenge = await ctx.publicClient.readContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "removeControllerChallenge",
+        args: [name, qx, qy],
+      });
+      return json(res, 200, { challenge });
     }
     if (req.method === "GET" && url.pathname.startsWith("/opted-in/")) {
       const rest = url.pathname.slice("/opted-in/".length);
@@ -197,6 +240,39 @@ async function handle(
         args: [name, nodeKey],
       });
       return json(res, 200, { challenge });
+    }
+    if (req.method === "POST" && url.pathname === "/link") {
+      const body = (await readJson(req)) as {
+        name: string;
+        nodeKey: Hex;
+        newQx: Hex;
+        newQy: Hex;
+        inviteId: Hex;
+        auth: AuthBody;
+      };
+      const hash = await ctx.walletClient.writeContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "linkNode",
+        args: [body.name, body.nodeKey, body.newQx, body.newQy, body.inviteId, toAuth(body.auth)],
+        account: ctx.account,
+        chain: ctx.chain,
+      });
+      await ctx.publicClient.waitForTransactionReceipt({ hash });
+      return json(res, 200, { hash });
+    }
+    if (req.method === "POST" && url.pathname === "/remove-controller") {
+      const body = (await readJson(req)) as { name: string; qx: Hex; qy: Hex; auth: AuthBody };
+      const hash = await ctx.walletClient.writeContract({
+        address: ctx.registry,
+        abi: registryAbi,
+        functionName: "removeController",
+        args: [body.name, body.qx, body.qy, toAuth(body.auth)],
+        account: ctx.account,
+        chain: ctx.chain,
+      });
+      await ctx.publicClient.waitForTransactionReceipt({ hash });
+      return json(res, 200, { hash });
     }
     if (req.method === "POST" && url.pathname === "/opt-out") {
       const body = (await readJson(req)) as { name: string; nodeKey: Hex; auth: AuthBody };

@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { Archive, Flame, RefreshCw, Star } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/I18nProvider";
+import type { MessageKey } from "@/i18n/messages";
 
 export type Folder = "inbox" | "sent" | "starred" | "archive" | "spam" | "trash";
 
@@ -22,14 +24,14 @@ type Props = {
   onNavigate?: () => void;
 };
 
-const FOLDERS: { id: Folder; label: string; icon?: ReactNode }[] = [
-  { id: "inbox", label: "Inbox" },
-  { id: "sent", label: "Sent" },
-  { id: "starred", label: "Starred", icon: <Star className="h-3.5 w-3.5" /> },
-  { id: "archive", label: "Archive", icon: <Archive className="h-3.5 w-3.5" /> },
-  { id: "spam", label: "Spam", icon: <Flame className="h-3.5 w-3.5" /> },
-  { id: "trash", label: "Trash" },
-];
+const FOLDER_KEYS: Record<Folder, MessageKey> = {
+  inbox: "folder.inbox",
+  sent: "folder.sent",
+  starred: "folder.starred",
+  archive: "folder.archive",
+  spam: "folder.spam",
+  trash: "folder.trash",
+};
 
 export function SidebarNav({
   domain,
@@ -47,6 +49,8 @@ export function SidebarNav({
   onFullSettings,
   onNavigate,
 }: Props) {
+  const t = useT();
+
   const pickFolder = (f: Folder) => {
     onFolder(f);
     onNavigate?.();
@@ -56,6 +60,15 @@ export function SidebarNav({
     variant === "drawer"
       ? "flex h-full w-full flex-col bg-[#1b1330] px-3 py-4 text-[#e9e4ff]"
       : "hidden h-full w-[200px] shrink-0 flex-col bg-[#1b1330] px-3 py-4 text-[#e9e4ff] md:flex lg:w-[220px]";
+
+  const folders: { id: Folder; icon?: ReactNode }[] = [
+    { id: "inbox" },
+    { id: "sent" },
+    { id: "starred", icon: <Star className="h-3.5 w-3.5" /> },
+    { id: "archive", icon: <Archive className="h-3.5 w-3.5" /> },
+    { id: "spam", icon: <Flame className="h-3.5 w-3.5" /> },
+    { id: "trash" },
+  ];
 
   return (
     <nav className={navClass}>
@@ -78,20 +91,20 @@ export function SidebarNav({
         </div>
       )}
       <Button className="mb-4 hidden w-full justify-center rounded-full bg-primary py-2.5 md:flex" onClick={onCompose}>
-        New message
+        {t("mail.newMessage")}
       </Button>
-      {FOLDERS.map(({ id, label, icon }) => (
+      {folders.map(({ id, icon }) => (
         <div key={id} className="mb-0.5 flex items-center gap-1">
           <button
             type="button"
-            className={`flex flex-1 items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm capitalize ${
+            className={`flex flex-1 items-center justify-between rounded-lg px-3 py-2.5 text-start text-sm capitalize ${
               folder === id ? "bg-primary text-white" : "hover:bg-white/10"
             }`}
             onClick={() => pickFolder(id)}
           >
             <span className="flex items-center gap-2">
               {icon}
-              {label}
+              {t(FOLDER_KEYS[id])}
             </span>
             {id === "inbox" && unreadInbox > 0 ? (
               <span className={`rounded-full px-2 py-0.5 text-xs ${folder === id ? "bg-white/20" : "bg-primary/30"}`}>
@@ -107,7 +120,7 @@ export function SidebarNav({
             <button
               type="button"
               className="rounded-lg p-2 hover:bg-white/10 disabled:opacity-50"
-              title="Refresh"
+              title={t("toolbar.refresh")}
               disabled={refreshPending}
               onClick={onRefresh}
             >
@@ -118,26 +131,26 @@ export function SidebarNav({
       ))}
       <button
         type="button"
-        className="mt-2 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-white/10"
+        className="mt-2 rounded-lg px-3 py-2.5 text-start text-sm hover:bg-white/10"
         onClick={() => {
           onSettings();
           onNavigate?.();
         }}
       >
-        Quick settings
+        {t("settings.quickSettings")}
       </button>
       <button
         type="button"
-        className="rounded-lg px-3 py-2.5 text-left text-sm hover:bg-white/10"
+        className="rounded-lg px-3 py-2.5 text-start text-sm hover:bg-white/10"
         onClick={() => {
           onFullSettings();
           onNavigate?.();
         }}
       >
-        All settings
+        {t("settings.allSettings")}
       </button>
       <div className="mt-auto px-2 pt-4 text-xs text-[#c4b5fd]">
-        <div className="mb-1">Storage {storagePct}%</div>
+        <div className="mb-1">{t("mail.storagePct", { pct: storagePct })}</div>
         <div className="h-1.5 rounded-full bg-white/15">
           <div className="h-full rounded-full bg-primary" style={{ width: `${storagePct}%` }} />
         </div>

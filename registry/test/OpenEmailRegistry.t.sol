@@ -37,6 +37,11 @@ contract OpenEmailRegistryTest is PasskeySigner {
         assertEq(storedQy, bytes32(qy));
         assertEq(storedDekPublic, DEK_PUBLIC);
         assertEq(storedWrapped, WRAPPED_DEK);
+
+        (bytes32[] memory qxList, bytes32[] memory qyList) = registry.controllers("alice");
+        assertEq(qxList.length, 1);
+        assertEq(qxList[0], bytes32(qx));
+        assertEq(qyList[0], bytes32(qy));
     }
 
     function test_register_rejects_wrong_passkey() public {
@@ -144,6 +149,112 @@ contract OpenEmailRegistryTest is PasskeySigner {
         registry.optOut("alice", nodeKey, _sign(registry.optOutChallenge("alice", nodeKey)));
         assertFalse(registry.isOptedIn("alice", nodeKey));
         assertGt(registry.optedOutAt("alice", nodeKey), 0);
+    }
+
+    function test_linkNode_adds_controller_and_opts_in() public {
+        _registerAlice();
+        bytes32 nodeKeyB = keccak256("node-b");
+        _registerNode("node-b.test", nodeKeyB);
+        _initPasskey2(2);
+
+        bytes32 inviteId = keccak256("invite-1");
+        bytes memory challenge = registry.linkNodeChallenge("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId);
+        registry.linkNode("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId, _sign(challenge));
+
+        assertTrue(registry.isOptedIn("alice", nodeKeyB));
+        assertTrue(registry.inviteUsed(inviteId));
+
+        (bytes32[] memory qxList,) = registry.controllers("alice");
+        assertEq(qxList.length, 2);
+    }
+
+    function test_linkNode_rejects_zero_inviteId() public {
+        _registerAlice();
+        bytes32 nodeKeyB = keccak256("node-b");
+        _registerNode("node-b.test", nodeKeyB);
+        _initPasskey2(2);
+
+        WebAuthn.WebAuthnAuth memory auth;
+        vm.expectRevert(OpenEmailRegistry.ZeroInviteId.selector);
+        registry.linkNode("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), bytes32(0), auth);
+    }
+
+    function test_linkNode_rejects_reused_inviteId() public {
+        _registerAlice();
+        bytes32 nodeKeyB = keccak256("node-b");
+        _registerNode("node-b.test", nodeKeyB);
+        _initPasskey2(2);
+
+        bytes32 inviteId = keccak256("invite-replay");
+        bytes memory challenge = registry.linkNodeChallenge("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId);
+        WebAuthn.WebAuthnAuth memory auth = _sign(challenge);
+        registry.linkNode("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId, auth);
+
+        vm.expectRevert(OpenEmailRegistry.InviteUsed.selector);
+        registry.linkNode("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId, auth);
+    }
+
+    function test_optOut_of_A_signed_by_controller2() public {
+        _registerAlice();
+        bytes32 nodeKeyA = keccak256("node-a");
+        bytes32 nodeKeyB = keccak256("node-b");
+        _registerNode("node-a.test", nodeKeyA);
+        _registerNode("node-b.test", nodeKeyB);
+        registry.optIn("alice", nodeKeyA, _sign(registry.optInChallenge("alice", nodeKeyA)));
+
+        _initPasskey2(2);
+        bytes32 inviteId = keccak256("invite-optout");
+        registry.linkNode(
+            "alice",
+            nodeKeyB,
+            bytes32(qx2),
+            bytes32(qy2),
+            inviteId,
+            _sign(registry.linkNodeChallenge("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId))
+        );
+
+        registry.optOut("alice", nodeKeyA, _sign2(registry.optOutChallenge("alice", nodeKeyA)));
+        assertFalse(registry.isOptedIn("alice", nodeKeyA));
+    }
+
+    function test_removeController_revokes_key1() public {
+        _registerAlice();
+        bytes32 nodeKeyB = keccak256("node-b");
+        _registerNode("node-b.test", nodeKeyB);
+        _initPasskey2(2);
+
+        bytes32 inviteId = keccak256("invite-remove");
+        registry.linkNode(
+            "alice",
+            nodeKeyB,
+            bytes32(qx2),
+            bytes32(qy2),
+            inviteId,
+            _sign(registry.linkNodeChallenge("alice", nodeKeyB, bytes32(qx2), bytes32(qy2), inviteId))
+        );
+
+        bytes memory removeChallenge = registry.removeControllerChallenge("alice", bytes32(qx), bytes32(qy));
+        registry.removeController("alice", bytes32(qx), bytes32(qy), _sign2(removeChallenge));
+
+        (bytes32[] memory qxList,) = registry.controllers("alice");
+        assertEq(qxList.length, 1);
+        assertEq(qxList[0], bytes32(qx2));
+
+        bytes memory optChallenge = registry.optInChallenge("alice", nodeKeyB);
+        registry.optIn("alice", nodeKeyB, _sign2(optChallenge));
+
+        bytes memory replayChallenge = registry.optInChallenge("alice", nodeKeyB);
+        WebAuthn.WebAuthnAuth memory revokedAuth = _sign(replayChallenge);
+        vm.expectRevert(OpenEmailRegistry.InvalidPasskey.selector);
+        registry.optIn("alice", nodeKeyB, revokedAuth);
+    }
+
+    function test_removeController_rejects_last_key() public {
+        _registerAlice();
+        bytes memory removeChallenge = registry.removeControllerChallenge("alice", bytes32(qx), bytes32(qy));
+        WebAuthn.WebAuthnAuth memory auth = _sign(removeChallenge);
+        vm.expectRevert(OpenEmailRegistry.LastController.selector);
+        registry.removeController("alice", bytes32(qx), bytes32(qy), auth);
     }
 
     function test_testnet_register_stores_suffixed_name() public {

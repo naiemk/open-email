@@ -11,6 +11,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   nodeOf,
   startAnvilStack,
   type AnvilStack,
@@ -104,6 +105,7 @@ describe("owner-registered node through receive", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, n);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
 

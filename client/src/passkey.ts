@@ -30,7 +30,7 @@ export function generatePasskey(): Passkey {
 export function signWebAuthn(challenge: Uint8Array, secretKey: Uint8Array): WebAuthnAuthJson {
   const authenticatorData = new Uint8Array(37);
   authenticatorData[32] = 0x05; // UP | UV
-  const clientDataJSON = `{"type":"webauthn.get","challenge":"${Buffer.from(challenge).toString("base64url")}"}`;
+  const clientDataJSON = `{"type":"webauthn.get","challenge":"${bytesToBase64Url(challenge)}"}`;
   const clientHash = sha256(new TextEncoder().encode(clientDataJSON));
   const signed = new Uint8Array(authenticatorData.length + clientHash.length);
   signed.set(authenticatorData);
@@ -45,4 +45,10 @@ export function signWebAuthn(challenge: Uint8Array, secretKey: Uint8Array): WebA
     authenticatorData: bytesToHex(authenticatorData),
     clientDataJSON,
   };
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }

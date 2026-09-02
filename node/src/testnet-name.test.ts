@@ -11,6 +11,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -67,6 +68,7 @@ describe("testnet names through receive", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, n);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
   });

@@ -33,6 +33,8 @@ import {
 } from "@/lib/api";
 import { relayerHint } from "@/lib/api-fetch";
 import { passkeyLog, passkeyLogError } from "@/lib/passkey-log";
+import { useI18n } from "@/i18n/I18nProvider";
+import { localizeError } from "@/i18n/localize-error";
 import { findPasskey, listPasskeys, rememberPasskey, removePasskey, touchPasskey } from "@/lib/passkeys-store";
 import {
   clearSignupDraft,
@@ -57,6 +59,7 @@ import { InboxPage } from "@/screens/InboxPage";
 import { PayModal } from "@/modals/PayModal";
 import { RecoveryModal } from "@/modals/RecoveryModal";
 import { PairScanModal } from "@/modals/PairScanModal";
+import { ServicePairOpenModal } from "@/modals/ServicePairOpenModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export type Session = {
@@ -81,6 +84,7 @@ export type SignupState = {
 type AuthPhase = "landing" | "paying" | "recovery" | "inbox";
 
 export default function App() {
+  const { t, messages } = useI18n();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -90,6 +94,8 @@ export default function App() {
   const [recovery, setRecovery] = useState("");
   const [pendingSession, setPendingSession] = useState<Session | null>(null);
   const [pairScanOpen, setPairScanOpen] = useState(false);
+  const [servicePairOpen, setServicePairOpen] = useState(false);
+  const [openExistingOeId, setOpenExistingOeId] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -114,7 +120,7 @@ export default function App() {
           }
         }
       } catch (e) {
-        setError(String(e));
+        setError(localizeError(messages, e));
       }
     })();
     const params = new URLSearchParams(location.search);
@@ -227,7 +233,7 @@ export default function App() {
 
   const turnstile = () => {
     if (meta?.fakeCheckout || meta.disableTurnstile) return "ok";
-    if (!turnstileToken) throw new Error("Complete the Turnstile check");
+    if (!turnstileToken) throw new Error(t("errors.turnstileRequired"));
     return turnstileToken;
   };
 
@@ -245,7 +251,7 @@ export default function App() {
       passkeyLog("run:ok", { label });
     } catch (e) {
       passkeyLogError("run:error", e, { label });
-      setError(relayerHint(webAuthnUserError(e)));
+      setError(localizeError(messages, relayerHint(webAuthnUserError(e))));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -363,7 +369,7 @@ export default function App() {
   const onSignUp = (oeId: string) =>
     run("onSignUp", async () => {
       if (!meta) return;
-      if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters with no dots");
+      if (!isValidOeId(oeId)) throw new Error(t("errors.invalidOeId"));
       const mat = await createPasskey(oeId, meta.domain);
       rememberPasskey({
         credentialId: mat.credentialId,
@@ -400,8 +406,8 @@ export default function App() {
       const { credentialId, kek } = await connectPasskey();
       touchPasskey(credentialId);
       const stored = listPasskeys().find((p) => p.credentialId === credentialId);
-      const oeId = stored?.oeId ?? prompt("Enter your OE id")?.trim() ?? "";
-      if (!isValidOeId(oeId)) throw new Error("OE id must be at least 5 characters with no dots");
+      const oeId = stored?.oeId ?? prompt(t("errors.enterOeId"))?.trim() ?? "";
+      if (!isValidOeId(oeId)) throw new Error(t("errors.invalidOeId"));
       await signIn(credentialId, oeId, kek);
     });
 
@@ -419,7 +425,7 @@ export default function App() {
     run("onDemoSignIn", async () => {
       if (!meta?.mockPasskey) return;
       const cfg = await fetchMockConfig();
-      if (!cfg) throw new Error("Demo account not configured on this node");
+      if (!cfg) throw new Error(t("errors.demoNotConfigured"));
       seedMockPasskey({
         oeId: cfg.oeId,
         credentialId: cfg.credentialId,
@@ -466,7 +472,7 @@ export default function App() {
       const qx = stored?.qx ?? signup.qx;
       const qy = stored?.qy ?? signup.qy;
       if (!qx || !qy) {
-        throw new Error("Passkey coordinates missing — remove this stored login and sign up again");
+        throw new Error(t("errors.passkeyCoordsMissing"));
       }
       passkeyLog("onPaidRegister:register-paid-post", { qx: qx.slice(0, 12), qy: qy.slice(0, 12) });
       await registerPaid({
@@ -523,7 +529,7 @@ export default function App() {
   };
 
   if (!meta) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">{t("common.loading")}</div>;
   }
 
   if (phase === "inbox" && session) {
@@ -558,6 +564,10 @@ export default function App() {
         onConnect={onConnect}
         onConnectStored={onConnectStored}
         onAddDevice={() => setPairScanOpen(true)}
+        onOpenExisting={(oeId) => {
+          setOpenExistingOeId(oeId);
+          setServicePairOpen(true);
+        }}
         onDemoSignIn={meta.mockPasskey ? onDemoSignIn : undefined}
       />
       <PayModal
@@ -570,7 +580,7 @@ export default function App() {
           setPhase("landing");
         }}
         onPoll={async () => {
-          if (!signup) throw new Error("No signup in progress");
+          if (!signup) throw new Error(t("errors.noSignupInProgress"));
           return pollInvoice(signup.invoiceId);
         }}
         onMarkPaid={async () => {
@@ -596,6 +606,16 @@ export default function App() {
           setPairScanOpen(false);
           setSession(s);
           setPhase("inbox");
+        }}
+      />
+      <ServicePairOpenModal
+        open={servicePairOpen}
+        meta={meta}
+        initialOeId={openExistingOeId}
+        onClose={() => setServicePairOpen(false)}
+        onDone={(s) => {
+          setServicePairOpen(false);
+          enterInbox(s);
         }}
       />
     </>

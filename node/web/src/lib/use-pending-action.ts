@@ -1,23 +1,30 @@
 import { useCallback, useRef, useState } from "react";
 
-/** Run one async action at a time; expose pending key for button disabled states. */
+/** Run async actions; each key can run independently (send vs reload). */
 export function usePendingAction() {
-  const busyRef = useRef(false);
-  const [pending, setPending] = useState<string | null>(null);
+  const activeKeys = useRef<Set<string>>(new Set());
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
 
   const run = useCallback(async <T,>(key: string, fn: () => Promise<T>): Promise<T | undefined> => {
-    if (busyRef.current) return undefined;
-    busyRef.current = true;
-    setPending(key);
+    if (activeKeys.current.has(key)) return undefined;
+    activeKeys.current.add(key);
+    setPendingKeys((prev) => new Set(prev).add(key));
     try {
       return await fn();
     } finally {
-      busyRef.current = false;
-      setPending(null);
+      activeKeys.current.delete(key);
+      setPendingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   }, []);
 
-  const isPending = useCallback((key?: string) => (key ? pending === key : pending !== null), [pending]);
+  const isPending = useCallback(
+    (key?: string) => (key ? pendingKeys.has(key) : pendingKeys.size > 0),
+    [pendingKeys],
+  );
 
-  return { pending, run, isPending };
+  return { pending: pendingKeys.size > 0 ? [...pendingKeys][0] : null, run, isPending };
 }

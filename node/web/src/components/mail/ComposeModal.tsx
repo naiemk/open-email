@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ComposeAttachment } from "@/lib/mail";
+import { useT } from "@/i18n/I18nProvider";
+import type { MessageKey } from "@/i18n/messages";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
 
@@ -24,11 +26,11 @@ type Props = {
   onClose: () => void;
 };
 
-const MODE_TITLE: Record<ComposeMode, string> = {
-  new: "New message",
-  reply: "Reply",
-  replyAll: "Reply all",
-  forward: "Forward",
+const MODE_KEYS: Record<ComposeMode, MessageKey> = {
+  new: "compose.new",
+  reply: "compose.reply",
+  replyAll: "compose.replyAll",
+  forward: "compose.forward",
 };
 
 export function ComposeModal({
@@ -48,6 +50,8 @@ export function ComposeModal({
   onSend,
   onClose,
 }: Props) {
+  const t = useT();
+
   if (!open) return null;
 
   const addFiles = async (files: FileList | null) => {
@@ -72,13 +76,13 @@ export function ComposeModal({
       <button
         type="button"
         className="absolute inset-0 hidden bg-black/20 md:block"
-        aria-label="Close"
+        aria-label={t("common.close")}
         disabled={pending}
         onClick={onClose}
       />
       <div className="relative z-10 flex h-full w-full flex-col overflow-hidden bg-white md:h-auto md:max-h-[90vh] md:max-w-[640px] md:rounded-xl md:border md:border-border md:shadow-2xl">
         <div className="flex shrink-0 items-center justify-between bg-[#1b1330] px-4 py-3 text-white">
-          <span className="text-sm font-medium">{MODE_TITLE[mode]}</span>
+          <span className="text-sm font-medium">{t(MODE_KEYS[mode])}</span>
           <button
             type="button"
             className="text-lg leading-none opacity-80 hover:opacity-100 disabled:opacity-40"
@@ -90,25 +94,25 @@ export function ComposeModal({
         </div>
         <div className="shrink-0 space-y-0 border-b border-border">
           <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-sm">
-            <span className="w-12 text-muted-foreground">From</span>
+            <span className="w-12 text-muted-foreground">{t("compose.from")}</span>
             <span className="truncate">{from}</span>
           </div>
           <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-            <span className="w-12 shrink-0 text-sm text-muted-foreground">To</span>
+            <span className="w-12 shrink-0 text-sm text-muted-foreground">{t("compose.to")}</span>
             <Input
               value={to}
               onChange={(e) => onTo(e.target.value)}
-              placeholder="recipient@example.com"
+              placeholder={t("compose.recipientPlaceholder")}
               disabled={pending}
               className="border-0 shadow-none focus-visible:ring-0"
             />
           </div>
           <div className="flex items-center gap-2 px-4 py-2">
-            <span className="w-12 shrink-0 text-sm text-muted-foreground">Subject</span>
+            <span className="w-12 shrink-0 text-sm text-muted-foreground">{t("compose.subject")}</span>
             <Input
               value={subject}
               onChange={(e) => onSubject(e.target.value)}
-              placeholder="Subject"
+              placeholder={t("compose.subjectPlaceholder")}
               disabled={pending}
               className="border-0 shadow-none focus-visible:ring-0"
             />
@@ -117,7 +121,7 @@ export function ComposeModal({
         <Textarea
           value={body}
           onChange={(e) => onBody(e.target.value)}
-          placeholder="Write your message…"
+          placeholder={t("compose.writeMessage")}
           disabled={pending}
           className="min-h-0 flex-1 resize-none rounded-none border-0 focus-visible:ring-0 md:min-h-[220px] md:flex-none"
         />
@@ -129,7 +133,7 @@ export function ComposeModal({
                 {att.filename}
                 <button
                   type="button"
-                  className="ml-1"
+                  className="ms-1"
                   disabled={pending}
                   onClick={() => onAttachments(attachments.filter((_, j) => j !== i))}
                 >
@@ -139,20 +143,24 @@ export function ComposeModal({
             ))}
           </div>
         ) : null}
-        {error ? <p className="shrink-0 px-4 text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p className="shrink-0 px-4 py-2 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <label className="flex cursor-pointer items-center gap-2 text-xs text-primary underline">
             <Paperclip className="h-4 w-4" />
-            Attach
+            {t("compose.attach")}
             <input type="file" multiple className="hidden" disabled={pending} onChange={(e) => void addFiles(e.target.files)} />
           </label>
           <Button className="rounded-full px-6" disabled={pending || !to.trim()} onClick={onSend}>
             {pending ? (
-              "Sending…"
+              t("compose.sending")
             ) : (
               <>
-                <Send className="mr-2 h-4 w-4 md:hidden" />
-                Send
+                <Send className="me-2 h-4 w-4 md:hidden" />
+                {t("compose.send")}
               </>
             )}
           </Button>

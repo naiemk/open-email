@@ -6,6 +6,7 @@ import {
   ensureRegistryBuilt,
   isOptedIn,
   nameRecordOf,
+  mailboxGenerationOf,
   startAnvilStack,
   type AnvilStack,
 } from "../../relayer/src/anvil.ts";
@@ -69,6 +70,7 @@ describe("index quota and trash", () => {
           const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
           return { dekPublic, wrappedDek };
         },
+        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
       },
     });
   });
@@ -142,5 +144,40 @@ describe("index quota and trash", () => {
       data: small,
     });
     expect(again.dataCode).toBe(250);
+  });
+
+  it("permanently deletes one trashed message via /delete/ and frees quota", async () => {
+    const beforeRows = (await (await fetch(`${nodeA.url}/index/alice`)).json()) as { seq: number }[];
+    const sent = await sendSmtp({
+      host: "127.0.0.1",
+      port: nodeA.smtpPort,
+      from: "gmail-user@example.com",
+      to: "alice@node-a.test",
+      data: small,
+    });
+    expect(sent.dataCode).toBe(250);
+
+    const rows = (await (await fetch(`${nodeA.url}/index/alice`)).json()) as {
+      seq: number;
+      cid: string;
+      size: number;
+    }[];
+    const row = rows.find((r) => !beforeRows.some((b) => b.seq === r.seq));
+    expect(row).toBeDefined();
+
+    const before = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
+
+    const trashed = await fetch(`${nodeA.url}/trash/alice/${row!.seq}`, { method: "POST" });
+    expect(trashed.status).toBe(200);
+    const stillCounted = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
+    expect(stillCounted.total_size).toBe(before.total_size);
+
+    const deleted = await fetch(`${nodeA.url}/delete/alice/${row!.seq}`, { method: "POST" });
+    expect(deleted.status).toBe(200);
+    const freed = (await (await fetch(`${nodeA.url}/storage/alice`)).json()) as { total_size: number };
+    expect(freed.total_size).toBe(before.total_size - row!.size);
+    const remaining = (await (await fetch(`${nodeA.url}/index/alice`)).json()) as { seq: number }[];
+    expect(remaining.some((r) => r.seq === row!.seq)).toBe(false);
+    expect((await fetch(`${nodeA.url}/blobs/${row!.cid}?name=alice`)).status).toBe(404);
   });
 });

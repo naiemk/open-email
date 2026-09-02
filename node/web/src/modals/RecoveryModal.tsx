@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/I18nProvider";
 
 type Props = {
   open: boolean;
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function RecoveryModal({ open, secret, error, busy, onSaved }: Props) {
+  const t = useT();
   const lock = useRef(false);
   if (!busy) lock.current = false;
 
@@ -19,10 +21,8 @@ export function RecoveryModal({ open, secret, error, busy, onSaved }: Props) {
     <Dialog open={open} onClose={() => {}}>
       <DialogContent>
         <CardHeader>
-          <CardTitle>Save your recovery secret</CardTitle>
-          <CardDescription>
-            Lose every device and this secret → the mailbox is gone. Store it offline before continuing.
-          </CardDescription>
+          <CardTitle>{t("recovery.title")}</CardTitle>
+          <CardDescription>{t("recovery.desc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <pre className="max-h-[40vh] overflow-auto rounded-lg bg-accent p-4 text-[11px] text-accent-foreground md:text-xs">{secret}</pre>
@@ -36,7 +36,7 @@ export function RecoveryModal({ open, secret, error, busy, onSaved }: Props) {
               onSaved();
             }}
           >
-            {busy ? "Waiting for passkey…" : "I saved it — opt in to this node"}
+            {busy ? t("common.waitingPasskey") : t("recovery.savedOptIn")}
           </Button>
         </CardContent>
       </DialogContent>

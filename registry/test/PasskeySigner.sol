@@ -13,18 +13,35 @@ abstract contract PasskeySigner is Test {
     uint256 internal qx;
     uint256 internal qy;
 
+    uint256 internal p256PrivateKey2;
+    uint256 internal qx2;
+    uint256 internal qy2;
+
     function _initPasskey(uint256 seed) internal {
         p256PrivateKey = bound(seed, 1, P256.N - 1);
         (qx, qy) = vm.publicKeyP256(p256PrivateKey);
     }
 
+    function _initPasskey2(uint256 seed) internal {
+        p256PrivateKey2 = bound(seed, 1, P256.N - 1);
+        (qx2, qy2) = vm.publicKeyP256(p256PrivateKey2);
+    }
+
     function _sign(bytes memory challenge) internal view returns (WebAuthn.WebAuthnAuth memory) {
+        return _signWith(p256PrivateKey, challenge);
+    }
+
+    function _sign2(bytes memory challenge) internal view returns (WebAuthn.WebAuthnAuth memory) {
+        return _signWith(p256PrivateKey2, challenge);
+    }
+
+    function _signWith(uint256 sk, bytes memory challenge) internal view returns (WebAuthn.WebAuthnAuth memory) {
         bytes memory authenticatorData =
             abi.encodePacked(bytes32(0), WebAuthn.AUTH_DATA_FLAGS_UP | WebAuthn.AUTH_DATA_FLAGS_UV, bytes4(0));
         string memory clientDataJSON =
             string.concat('{"type":"webauthn.get","challenge":"', Base64.encodeURL(challenge), '"}');
         bytes32 messageHash = sha256(abi.encodePacked(authenticatorData, sha256(bytes(clientDataJSON))));
-        (bytes32 r, bytes32 s) = vm.signP256(p256PrivateKey, messageHash);
+        (bytes32 r, bytes32 s) = vm.signP256(sk, messageHash);
         s = bytes32(Math.min(uint256(s), P256.N - uint256(s)));
         return WebAuthn.WebAuthnAuth({
             authenticatorData: authenticatorData,

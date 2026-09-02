@@ -30,9 +30,11 @@ export default defineConfig({
       "/mail-state": "http://127.0.0.1:8787",
       "/mail-labels": "http://127.0.0.1:8787",
       "/empty-trash": "http://127.0.0.1:8787",
+      "/delete": "http://127.0.0.1:8787",
       "/send": "http://127.0.0.1:8787",
       "/pair": "http://127.0.0.1:8787",
       "/pay": "http://127.0.0.1:8787",
+      "/geo": "http://127.0.0.1:8787",
     },
   },
 });

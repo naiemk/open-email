@@ -160,6 +160,27 @@ export async function isOptedIn(
   }) as Promise<boolean>;
 }
 
+export async function mailboxGenerationOf(client: RegistryReadClient, name: string): Promise<number> {
+  const gen = await client.publicClient.readContract({
+    address: client.registry,
+    abi: registryAbi,
+    functionName: "mailboxGeneration",
+    args: [name],
+  });
+  return Number(gen);
+}
+
+export function defaultRegistryClient(stack: RegistryReadClient) {
+  return {
+    isOptedIn: (name: string, nodeKey: Hex) => isOptedIn(stack, name, nodeKey),
+    nameRecord: async (name: string) => {
+      const [, , dekPublic, wrappedDek] = await nameRecordOf(stack, name);
+      return { dekPublic, wrappedDek };
+    },
+    mailboxGeneration: (name: string) => mailboxGenerationOf(stack, name),
+  };
+}
+
 export function loadRegistryArtifact(): { abi: typeof registryAbi; bytecode: Hex } {
   const artifactPath = registryArtifactPath();
   const json = JSON.parse(readFileSync(artifactPath, "utf8")) as {

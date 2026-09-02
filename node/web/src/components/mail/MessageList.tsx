@@ -2,6 +2,7 @@ import { Paperclip, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { Mail } from "@/lib/mail";
 import { formatMailWeekday, isUnread, senderInitial } from "@/lib/mail";
+import { useI18n, useT } from "@/i18n/I18nProvider";
 
 type Props = {
   rows: Mail[];
@@ -26,11 +27,14 @@ export function MessageList({
   onToggleSelect,
   onStar,
 }: Props) {
+  const t = useT();
+  const { intlLocale } = useI18n();
+
   return (
-    <div className="flex h-full w-full shrink-0 flex-col border-r border-border bg-[#faf9fc] md:w-[280px] lg:w-[320px]">
+    <div className="flex h-full w-full shrink-0 flex-col border-e border-border bg-[#faf9fc] md:w-[280px] lg:w-[320px]">
       <div className={`border-b border-border p-3 ${searchOpen ? "" : "hidden md:block"}`}>
         <Input
-          placeholder="Search messages"
+          placeholder={t("mail.searchMessages")}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           className="rounded-full border-border bg-white"
@@ -38,7 +42,7 @@ export function MessageList({
       </div>
       <div className="flex-1 overflow-auto">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No messages</p>
+          <p className="p-4 text-sm text-muted-foreground">{t("mail.noMessages")}</p>
         ) : (
           rows.map((m) => {
             const unread = isUnread(m);
@@ -55,9 +59,9 @@ export function MessageList({
                   checked={selectedSeqs.has(m.seq)}
                   onChange={(e) => onToggleSelect(m.seq, e.target.checked)}
                   onClick={(e) => e.stopPropagation()}
-                  aria-label={`Select message ${m.seq}`}
+                  aria-label={t("labels.selectMessage", { seq: m.seq })}
                 />
-                <button type="button" className="flex min-w-0 flex-1 gap-3 text-left" onClick={() => onSelect(m.seq)}>
+                <button type="button" className="flex min-w-0 flex-1 gap-3 text-start" onClick={() => onSelect(m.seq)}>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
                     {senderInitial(m.from)}
                   </div>
@@ -69,13 +73,13 @@ export function MessageList({
                       <span className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           {m.attachments.length > 0 ? <Paperclip className="h-3 w-3" /> : null}
-                          {formatMailWeekday(m.time)}
+                          {formatMailWeekday(m.time, intlLocale)}
                         </span>
                         {onStar ? (
                           <button
                             type="button"
                             className="md:hidden"
-                            aria-label={m.starred ? "Unstar" : "Star"}
+                            aria-label={m.starred ? t("toolbar.unstar") : t("toolbar.star")}
                             onClick={(e) => {
                               e.stopPropagation();
                               onStar(m.seq, !m.starred);
@@ -87,7 +91,7 @@ export function MessageList({
                       </span>
                     </div>
                     <div className={`truncate text-sm ${unread ? "font-medium" : "text-foreground/80"}`}>
-                      {m.subject || "(no subject)"}
+                      {m.subject || t("mail.noSubject")}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">{m.body.slice(0, 80)}</div>
                   </div>

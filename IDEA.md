@@ -37,7 +37,7 @@ Two kinds of mailbox id:
 | Kind | Example SMTP local-part | How you get it |
 |------|-------------------------|----------------|
 | **OE id** | `alice` (no `.`) | Registry assigns/registers it. Must not contain `.`, so it cannot collide with ENS. |
-| **Linked ENS** | `vitalik.eth` | You **prove ownership** (sign). Registry stores the string. **NFT stays in your wallet.** No deposit, no withdraw. |
+| **Linked ENS** | `vitalik.eth` | You **claim** on L1 as the current NFT controller (wallet + passkey). Base **registry** applies the bind via messenger. **NFT stays in your wallet** and can transfer; **vacate** / re-**claim** follow the NFT. |
 
 Gmail still needs a domain: `alice@slick.email` and `vitalik.eth@slick.email`. From Gmail’s point of view those are different addresses if the domain differs. We do not care. From open-email’s point of view the mailbox is the registry name.
 
@@ -135,7 +135,7 @@ Activating a name requires **registration + storage paid**. An ENS name is not a
 
 | In v1 | Not in v1 |
 |-------|-----------|
-| Registry, OE ids, ENS **link by proof** | Minting `.eth` from our contract |
+| Registry, OE ids, **linked ENS** via L1 **claim** / **vacate** | Minting `.eth` from our contract |
 | WebAuthn + relayer (no wallet UI for A) | Wallet-required default path |
 | SMTP in/out + web app | IMAP, Apple Mail / Thunderbird against a public host |
 | IPFS-like storage + sequential index nodes | Modular DA chains as a hard dependency |

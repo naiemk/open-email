@@ -8,13 +8,17 @@ import { sealEnvelope } from "../../client/src/envelope.ts";
 import { signIndexWrite, type MailIndex } from "../../dal/src/indexLog.ts";
 import type { BlobStore } from "../../dal/src/storage.ts";
 import { createCredentialWrapStore, type CredentialWrapStore } from "./credential-wraps.ts";
+import { isLinkedEnsName, mailboxName as resolveMailboxName } from "./mailbox-name.ts";
 import { handleSignup, type SignupConfig } from "./signup.ts";
 import { createHitWindow } from "./rateLimit.ts";
 import { handleSend, smtpFromAddress, type SendConfig } from "./send.ts";
 import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
+import { handleServicePair } from "./service-pair.ts";
 import { createMailboxStateStore, type MailboxStateStore } from "./mailbox-state.ts";
 import { serveUiAsset, uiDistExists } from "./ui-static.ts";
+import { resolveGeo, resolvePayLocale } from "./geo.ts";
+import { payStrings } from "./pay-i18n.ts";
 
 export type NodeConfig = {
   domain: string;
@@ -23,6 +27,10 @@ export type NodeConfig = {
   registry: {
     isOptedIn: (name: string, nodeKey: Hex) => Promise<boolean>;
     nameRecord: (name: string) => Promise<{ dekPublic: Hex; wrappedDek: Hex }>;
+    mailboxGeneration: (name: string) => Promise<number>;
+  };
+  ensGate?: {
+    allowsReceive: (name: string) => Promise<boolean>;
   };
   blobs: BlobStore;
   index: MailIndex;
@@ -33,6 +41,7 @@ export type NodeConfig = {
   send?: SendConfig;
   dataDir?: string;
   signupPrice?: string;
+  relayerUrl?: string;
   devMode?: {
     mockPasskey: boolean;
     mockConfig?: {
@@ -66,27 +75,29 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
     disabledCommands: ["AUTH", "STARTTLS"],
     hideSTARTTLS: true,
     onRcptTo(address, session, callback) {
-      const rcptName = mailboxName(config, address.address);
+      const rcptName = resolveMailboxName(config.domain, address.address);
       if (rcptName) {
-        void config.registry.isOptedIn(rcptName, config.nodeKey).then((ok) => {
+        void canReceive(config, rcptName).then((ok) => {
           if (!ok) {
             callback(smtpError("No such user here", 550));
             return;
           }
-          if (config.index.totalSize(rcptName) >= config.index.cap) {
-            callback(smtpError("Insufficient storage", 452));
-            return;
-          }
-          callback();
+          void config.registry.mailboxGeneration(rcptName).then((generation) => {
+            if (config.index.totalSize(rcptName, generation) >= config.index.cap) {
+              callback(smtpError("Insufficient storage", 452));
+              return;
+            }
+            callback();
+          });
         });
         return;
       }
       const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
         ? session.envelope.mailFrom.address
         : "";
-      const fromName = mailboxName(config, mailFrom);
+      const fromName = resolveMailboxName(config.domain, mailFrom);
       if (fromName && config.send) {
-        void config.registry.isOptedIn(fromName, config.nodeKey).then((ok) => {
+        void canReceive(config, fromName).then((ok) => {
           if (!ok) {
             callback(smtpError("No such user here", 550));
             return;
@@ -107,7 +118,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
           callback(new Error("no recipient"));
           return;
         }
-        const rcptName = mailboxName(config, rcpt);
+        const rcptName = resolveMailboxName(config.domain, rcpt);
         if (rcptName) {
           void ingest(config, rcptName, rfc5322, "in")
             .then(() => callback())
@@ -117,7 +128,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
         const mailFrom = typeof session.envelope.mailFrom === "object" && session.envelope.mailFrom
           ? session.envelope.mailFrom.address
           : "";
-        const fromName = mailboxName(config, mailFrom);
+        const fromName = resolveMailboxName(config.domain, mailFrom);
         if (!fromName || !config.send) {
           callback(smtpError("No such user here", 550));
           return;
@@ -186,40 +197,53 @@ async function ingest(
   rfc5322: Uint8Array,
   direction: "in" | "out",
 ): Promise<void> {
-  const record = await config.registry.nameRecord(name);
+  const [record, generation] = await Promise.all([
+    config.registry.nameRecord(name),
+    config.registry.mailboxGeneration(name),
+  ]);
   const blob = await sealEnvelope(hexToBytes(record.dekPublic), name, rfc5322);
   const size = blob.byteLength;
-  if (config.index.totalSize(name) + size > config.index.cap) {
+  if (config.index.totalSize(name, generation) + size > config.index.cap) {
     throw smtpError("Insufficient storage", 452);
   }
   const cid = await config.blobs.pin(blob);
   const time = Math.floor(Date.now() / 1000);
   await config.index.append({
     name,
+    generation,
     time,
     cid,
     size,
     direction,
     nodeKey: config.nodeKey,
-    signature: signIndexWrite(config.nodeSecret, name, time, cid, size, direction),
+    signature: signIndexWrite(config.nodeSecret, name, generation, time, cid, size, direction),
   });
+}
+
+async function canReceive(config: NodeConfig, name: string): Promise<boolean> {
+  if (!(await config.registry.isOptedIn(name, config.nodeKey))) return false;
+  if (isLinkedEnsName(name) && config.ensGate) {
+    if (!(await config.ensGate.allowsReceive(name))) return false;
+  }
+  return true;
 }
 
 function smtpError(message: string, responseCode: number): Error {
   return Object.assign(new Error(message), { responseCode });
 }
 
-/** SMTP `{oe-id}@testnet.crypted.email` maps to registry name `{oe-id}.testnet`. */
-function mailboxName(config: NodeConfig, address: string): string | undefined {
-  const at = address.lastIndexOf("@");
-  const local = (at === -1 ? address : address.slice(0, at)).toLowerCase();
-  const host = (at === -1 ? "" : address.slice(at + 1)).toLowerCase();
-  if (host !== config.domain.toLowerCase()) return undefined;
-  if (config.domain.toLowerCase() === "testnet.crypted.email") {
-    if (local.includes(".")) return undefined;
-    return `${local}.testnet`;
-  }
-  return local;
+export { resolveMailboxName as mailboxName };
+
+function permanentlyDelete(
+  config: NodeConfig,
+  mailboxState: MailboxStateStore,
+  name: string,
+  seqs: number[],
+): void {
+  if (!seqs.length) return;
+  const cids = config.index.remove(name, seqs);
+  mailboxState.clearTrashFlags(name, seqs);
+  for (const cid of cids) config.blobs.unpin(cid);
 }
 
 async function handleHttp(
@@ -235,6 +259,7 @@ async function handleHttp(
   const url = new URL(req.url ?? "/", "http://node.local");
   try {
     if (await handlePair(req, url, res, pair, credentialWraps)) return;
+    if (await handleServicePair(req, url, res, config, credentialWraps)) return;
     if (
       config.signup &&
       (await handleSignup(req, url, res, config.signup, config.nodeKey, takeOptSlot))
@@ -277,6 +302,10 @@ async function handleHttp(
       });
       return;
     }
+    if (req.method === "GET" && url.pathname === "/geo") {
+      json(res, 200, resolveGeo(req));
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/dev/mock-config") {
       const cfg = config.devMode?.mockConfig;
       if (!cfg) {
@@ -286,8 +315,14 @@ async function handleHttp(
       json(res, 200, cfg);
       return;
     }
-    if (config.signup && url.pathname.startsWith("/api/")) {
-      await proxyRelayer(req, url, res, config.signup.relayerUrl, takeOptSlot);
+    if ((config.signup || config.relayerUrl) && url.pathname.startsWith("/api/")) {
+      await proxyRelayer(
+        req,
+        url,
+        res,
+        config.signup?.relayerUrl ?? config.relayerUrl!,
+        takeOptSlot,
+      );
       return;
     }
     if (req.method === "GET" && url.pathname === "/pay") {
@@ -298,12 +333,13 @@ async function handleHttp(
       }
       const returnUrl = `${url.origin}/?signup=${encodeURIComponent(id)}&paid=1`;
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(payHtml(id, returnUrl));
+      res.end(payHtml(id, returnUrl, resolvePayLocale(req)));
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/index/")) {
       const name = decodeURIComponent(url.pathname.slice("/index/".length));
-      const newestFirst = [...config.index.list(name)]
+      const generation = await config.registry.mailboxGeneration(name);
+      const newestFirst = [...config.index.list(name, generation)]
         .reverse()
         .map((row) => mailboxState.mergeRow(name, row));
       const before = Number(url.searchParams.get("before") ?? "");
@@ -350,7 +386,8 @@ async function handleHttp(
     }
     if (req.method === "GET" && url.pathname.startsWith("/storage/")) {
       const name = decodeURIComponent(url.pathname.slice("/storage/".length));
-      const total_size = config.index.totalSize(name);
+      const generation = await config.registry.mailboxGeneration(name);
+      const total_size = config.index.totalSize(name, generation);
       json(res, 200, {
         total_size,
         cap: config.index.cap,
@@ -378,17 +415,28 @@ async function handleHttp(
     }
     if (req.method === "POST" && url.pathname.startsWith("/empty-trash/")) {
       const name = decodeURIComponent(url.pathname.slice("/empty-trash/".length));
-      const seqs = mailboxState.trashedSeqs(name);
-      const cids = config.index.remove(name, seqs);
-      mailboxState.clearTrashFlags(name, seqs);
-      for (const cid of cids) config.blobs.unpin(cid);
+      permanentlyDelete(config, mailboxState, name, mailboxState.trashedSeqs(name));
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/delete/")) {
+      const rest = url.pathname.slice("/delete/".length);
+      const slash = rest.lastIndexOf("/");
+      const name = decodeURIComponent(rest.slice(0, slash));
+      const seq = Number(rest.slice(slash + 1));
+      if (!mailboxState.getFlags(name, seq).trashed) {
+        json(res, 400, { error: "not in trash" });
+        return;
+      }
+      permanentlyDelete(config, mailboxState, name, [seq]);
       json(res, 200, { ok: true });
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/blobs/")) {
       const cid = decodeURIComponent(url.pathname.slice("/blobs/".length));
       const name = url.searchParams.get("name") ?? "";
-      if (!name || !config.index.list(name).some((row) => row.cid === cid)) {
+      const generation = name ? await config.registry.mailboxGeneration(name) : 0;
+      if (!name || !config.index.list(name, generation).some((row) => row.cid === cid)) {
         json(res, 404, { error: "unknown cid" });
         return;
       }
@@ -436,9 +484,16 @@ async function proxyRelayer(
     path === "/register-challenge" ||
     path === "/opt-in-challenge" ||
     path === "/opt-out-challenge" ||
+    path === "/link-challenge" ||
+    path === "/remove-controller-challenge" ||
     path === "/opt-in" ||
     path === "/opt-out" ||
-    path.startsWith("/opted-in/");
+    path === "/link" ||
+    path === "/remove-controller" ||
+    path.startsWith("/opted-in/") ||
+    path.startsWith("/names/") ||
+    path.startsWith("/nodes/") ||
+    path.startsWith("/invite-used/");
   if (!allowed) {
     json(res, 404, { error: "not found" });
     return;
@@ -492,15 +547,17 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function payHtml(id: string, returnUrl: string): string {
+function payHtml(id: string, returnUrl: string, locale: string): string {
   const safeReturn = returnUrl.replace(/"/g, "&quot;");
+  const s = payStrings(locale);
+  const dir = locale === "ar" || locale === "fa" ? "rtl" : "ltr";
   return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Pay</title></head>
+<html lang="${locale}" dir="${dir}">
+<head><meta charset="utf-8"><title>${s.title}</title></head>
 <body>
-  <p>Testnet checkout for invoice ${id}.</p>
-  <button type="button" id="pay">Mark paid (test only)</button>
-  <p><a href="${safeReturn}">Return to mailbox signup</a></p>
+  <p>${s.checkout(id)}</p>
+  <button type="button" id="pay">${s.markPaid}</button>
+  <p><a href="${safeReturn}">${s.returnLabel}</a></p>
   <script>
     document.getElementById("pay").onclick = async () => {
       await fetch("/signup/invoice/${id}/pay", { method: "POST" });

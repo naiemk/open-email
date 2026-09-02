@@ -51,6 +51,30 @@ export const registryAbi = [
   },
   {
     type: "function",
+    name: "mailboxGeneration",
+    stateMutability: "view",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "nameExists",
+    stateMutability: "view",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setEnsBridge",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "ensClaim_", type: "address" },
+      { name: "crossDomainMessenger_", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "register",
     stateMutability: "nonpayable",
     inputs: [
@@ -154,6 +178,95 @@ export const registryAbi = [
   },
   {
     type: "function",
+    name: "linkNodeChallenge",
+    stateMutability: "view",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "nodeKey", type: "bytes32" },
+      { name: "newQx", type: "bytes32" },
+      { name: "newQy", type: "bytes32" },
+      { name: "inviteId", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "bytes" }],
+  },
+  {
+    type: "function",
+    name: "linkNode",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "nodeKey", type: "bytes32" },
+      { name: "newQx", type: "bytes32" },
+      { name: "newQy", type: "bytes32" },
+      { name: "inviteId", type: "bytes32" },
+      {
+        name: "auth",
+        type: "tuple",
+        components: [
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+          { name: "challengeIndex", type: "uint256" },
+          { name: "typeIndex", type: "uint256" },
+          { name: "authenticatorData", type: "bytes" },
+          { name: "clientDataJSON", type: "string" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "removeControllerChallenge",
+    stateMutability: "view",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "qx", type: "bytes32" },
+      { name: "qy", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "bytes" }],
+  },
+  {
+    type: "function",
+    name: "removeController",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "qx", type: "bytes32" },
+      { name: "qy", type: "bytes32" },
+      {
+        name: "auth",
+        type: "tuple",
+        components: [
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+          { name: "challengeIndex", type: "uint256" },
+          { name: "typeIndex", type: "uint256" },
+          { name: "authenticatorData", type: "bytes" },
+          { name: "clientDataJSON", type: "string" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "inviteUsed",
+    stateMutability: "view",
+    inputs: [{ name: "inviteId", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "controllers",
+    stateMutability: "view",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [
+      { name: "qxList", type: "bytes32[]" },
+      { name: "qyList", type: "bytes32[]" },
+    ],
+  },
+  {
+    type: "function",
     name: "optedOutAt",
     stateMutability: "view",
     inputs: [
@@ -178,4 +291,10 @@ export const registryAbi = [
   { type: "error", name: "EmptyDomain", inputs: [] },
   { type: "error", name: "NodeAlreadyRegistered", inputs: [] },
   { type: "error", name: "DomainTaken", inputs: [] },
+  { type: "error", name: "InviteUsed", inputs: [] },
+  { type: "error", name: "ZeroInviteId", inputs: [] },
+  { type: "error", name: "ControllerExists", inputs: [] },
+  { type: "error", name: "TooManyControllers", inputs: [] },
+  { type: "error", name: "UnknownController", inputs: [] },
+  { type: "error", name: "LastController", inputs: [] },
 ] as const;

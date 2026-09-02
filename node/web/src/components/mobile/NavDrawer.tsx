@@ -1,27 +1,19 @@
-import { useEffect, type ReactNode } from "react";
+import { useT } from "@/i18n/I18nProvider";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  children: ReactNode;
+  children: React.ReactNode;
 };
 
 export function NavDrawer({ open, onClose, children }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
+  const t = useT();
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex md:hidden">
-      <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close navigation" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-[min(85vw,320px)] flex-col shadow-xl">{children}</aside>
+    <div className="fixed inset-0 z-40 md:hidden">
+      <button type="button" className="absolute inset-0 bg-black/40" aria-label={t("aria.closeNav")} onClick={onClose} />
+      <div className="relative z-10 h-full w-[min(280px,85vw)] shadow-xl">{children}</div>
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LanguagePicker } from "@/i18n/LanguagePicker";
+import { useT } from "@/i18n/I18nProvider";
 
 type Props = {
   meta: Meta;
@@ -34,9 +36,10 @@ export function LandingPage({
   onOpenExisting,
   onDemoSignIn,
 }: Props) {
+  const t = useT();
   const [oeId, setOeId] = useState("");
   const [signInOpen, setSignInOpen] = useState(false);
-  const preview = `${oeId.trim() || "you"}@${meta.domain}`;
+  const preview = `${oeId.trim() || t("common.previewYou")}@${meta.domain}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f1fb] to-[#ebe6f5]">
@@ -45,32 +48,31 @@ export function LandingPage({
           <BrandMark size={32} />
           <div className="text-lg font-bold text-accent">{meta.domain}</div>
         </div>
+        <LanguagePicker />
       </header>
       <main className="mx-auto grid max-w-5xl gap-8 px-4 pb-16 md:grid-cols-[1.1fr_0.9fr] md:px-6">
         <section>
           <h1 className="text-2xl font-bold leading-tight text-accent sm:text-3xl md:text-4xl">
-            Encrypted mail bound to your name, not this server.
+            {t("landing.headline")}
           </h1>
-          <p className="mt-4 max-w-xl text-muted-foreground">
-            Pick an OE id, sign up with a passkey, pay once for registry + storage, then this node opts you in. No password.
-          </p>
+          <p className="mt-4 max-w-xl text-muted-foreground">{t("landing.subhead")}</p>
         </section>
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Create your mailbox</CardTitle>
-              <CardDescription>Sign up with a passkey — your device holds the keys.</CardDescription>
+              <CardTitle>{t("landing.createMailbox")}</CardTitle>
+              <CardDescription>{t("landing.createMailboxDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div>
-                <Label htmlFor="oe-id">OE id</Label>
+                <Label htmlFor="oe-id">{t("landing.oeId")}</Label>
                 <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Input
                     id="oe-id"
                     value={oeId}
                     onChange={(e) => setOeId(e.target.value)}
-                    placeholder="alice"
+                    placeholder={t("landing.oeIdPlaceholder")}
                     autoComplete="off"
                     spellCheck={false}
                     className="min-h-11"
@@ -81,7 +83,7 @@ export function LandingPage({
               </div>
               {turnstileSlot}
               <Button className="min-h-11 w-full" disabled={busy || !oeId.trim()} onClick={() => onSignUp(oeId.trim())}>
-                Sign up with passkey
+                {t("landing.signUpPasskey")}
               </Button>
               <Button
                 variant="secondary"
@@ -89,10 +91,10 @@ export function LandingPage({
                 disabled={busy || !oeId.trim()}
                 onClick={() => onOpenExisting(oeId.trim())}
               >
-                Open existing mailbox
+                {t("landing.openExisting")}
               </Button>
               {passkeys.length === 0 ? null : (
-                <p className="text-center text-xs text-muted-foreground">or use a passkey you already created here</p>
+                <p className="text-center text-xs text-muted-foreground">{t("landing.orUsePasskey")}</p>
               )}
               <div className="space-y-2">
                 {passkeys.map((p) => (
@@ -100,38 +102,38 @@ export function LandingPage({
                     key={p.credentialId}
                     type="button"
                     disabled={busy}
-                    className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-muted"
+                    className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-start text-sm hover:bg-muted"
                     onClick={() => onConnectStored(p.credentialId, p.oeId)}
                   >
                     <span>{p.label}</span>
-                    <span className="text-xs text-muted-foreground">Connect</span>
+                    <span className="text-xs text-muted-foreground">{t("common.connect")}</span>
                   </button>
                 ))}
               </div>
               <div className="flex flex-wrap gap-2 pt-2">
                 {onDemoSignIn ? (
                   <Button variant="secondary" disabled={busy} onClick={onDemoSignIn}>
-                    Demo sign in
+                    {t("landing.demoSignIn")}
                   </Button>
                 ) : null}
                 <Button variant="outline" disabled={busy} onClick={() => setSignInOpen(true)}>
-                  Sign in with passkey
+                  {t("landing.signInPasskey")}
                 </Button>
                 <Button variant="ghost" disabled={busy} onClick={onAddDevice}>
-                  Add device to another account
+                  {t("landing.addDeviceOther")}
                 </Button>
               </div>
             </CardContent>
           </Card>
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">The only mailbox with</CardTitle>
+              <CardTitle className="text-base">{t("landing.onlyMailboxWith")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>On-chain name you own — portable across nodes</p>
-              <p>Passkey + PRF — no password, keys stay on device</p>
-              <p>Sealed blobs — node stores ciphertext, you decrypt locally</p>
-              <p>Opt-in per node — you choose which provider receives mail</p>
+              <p>{t("landing.featureOnChain")}</p>
+              <p>{t("landing.featurePasskey")}</p>
+              <p>{t("landing.featureSealed")}</p>
+              <p>{t("landing.featureOptIn")}</p>
             </CardContent>
           </Card>
         </div>
@@ -140,15 +142,22 @@ export function LandingPage({
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <Card className="w-full max-w-md shadow-xl">
             <CardHeader>
-              <CardTitle>Sign in</CardTitle>
-              <CardDescription>Use a passkey already on this device (including iCloud Keychain).</CardDescription>
+              <CardTitle>{t("landing.signIn")}</CardTitle>
+              <CardDescription>{t("landing.signInDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button className="w-full" disabled={busy} onClick={() => { setSignInOpen(false); onConnect(); }}>
-                Connect our passkey
+              <Button
+                className="w-full"
+                disabled={busy}
+                onClick={() => {
+                  setSignInOpen(false);
+                  onConnect();
+                }}
+              >
+                {t("landing.connectOurPasskey")}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setSignInOpen(false)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </CardContent>
           </Card>

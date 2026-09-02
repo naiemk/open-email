@@ -6,6 +6,7 @@ import { hexToBytes, type Hex } from "viem";
 export type IndexEntry = {
   seq: number;
   name: string;
+  generation: number;
   time: number;
   cid: string;
   size: number;
@@ -15,6 +16,7 @@ export type IndexEntry = {
 
 export type IndexWrite = {
   name: string;
+  generation: number;
   time: number;
   cid: string;
   size: number;
@@ -28,30 +30,32 @@ export const STORAGE_CAP = 5 * 1024 * 1024;
 export type MailIndex = {
   cap: number;
   append: (write: IndexWrite) => Promise<IndexEntry>;
-  list: (name: string) => IndexEntry[];
-  totalSize: (name: string) => number;
+  list: (name: string, generation: number) => IndexEntry[];
+  totalSize: (name: string, generation: number) => number;
   remove: (name: string, seqs: number[]) => string[];
 };
 
 export function indexMessage(
   name: string,
+  generation: number,
   time: number,
   cid: string,
   size: number,
   direction: "in" | "out",
 ): Uint8Array {
-  return new TextEncoder().encode(`${name}\n${time}\n${cid}\n${size}\n${direction}`);
+  return new TextEncoder().encode(`${name}\n${generation}\n${time}\n${cid}\n${size}\n${direction}`);
 }
 
 export function signIndexWrite(
   secretKey: Uint8Array,
   name: string,
+  generation: number,
   time: number,
   cid: string,
   size: number,
   direction: "in" | "out",
 ): Uint8Array {
-  return ed25519.sign(indexMessage(name, time, cid, size, direction), secretKey);
+  return ed25519.sign(indexMessage(name, generation, time, cid, size, direction), secretKey);
 }
 
 export function createMailIndex(opts: {
@@ -64,10 +68,12 @@ export function createMailIndex(opts: {
   let nextSeq = 1;
   if (opts.persistPath && existsSync(opts.persistPath)) {
     const snap = JSON.parse(readFileSync(opts.persistPath, "utf8")) as {
-      entries: IndexEntry[];
+      entries: Array<IndexEntry & { generation?: number }>;
       nextSeq: number;
     };
-    entries.push(...(snap.entries ?? []));
+    for (const row of snap.entries ?? []) {
+      entries.push({ ...row, generation: row.generation ?? 1 });
+    }
     nextSeq = snap.nextSeq ?? entries.length + 1;
   }
   const save = () => {
@@ -83,13 +89,14 @@ export function createMailIndex(opts: {
       }
       const ok = ed25519.verify(
         write.signature,
-        indexMessage(write.name, write.time, write.cid, write.size, write.direction),
+        indexMessage(write.name, write.generation, write.time, write.cid, write.size, write.direction),
         hexToBytes(write.nodeKey),
       );
       if (!ok) throw new Error("bad index signature");
       const entry: IndexEntry = {
         seq: nextSeq++,
         name: write.name,
+        generation: write.generation,
         time: write.time,
         cid: write.cid,
         size: write.size,
@@ -100,11 +107,13 @@ export function createMailIndex(opts: {
       save();
       return entry;
     },
-    list(name) {
-      return entries.filter((e) => e.name === name);
+    list(name, generation) {
+      return entries.filter((e) => e.name === name && e.generation === generation);
     },
-    totalSize(name) {
-      return entries.filter((e) => e.name === name).reduce((sum, e) => sum + e.size, 0);
+    totalSize(name, generation) {
+      return entries
+        .filter((e) => e.name === name && e.generation === generation)
+        .reduce((sum, e) => sum + e.size, 0);
     },
     remove(name, seqs) {
       const drop = new Set(seqs);
