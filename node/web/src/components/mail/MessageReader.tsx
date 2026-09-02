@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Forward, Reply, ReplyAll, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { ActionSheet } from "@/components/mobile/ActionSheet";
 import { MobileReaderHeader } from "@/components/mobile/MobileReaderHeader";
 import type { Mail } from "@/lib/mail";
@@ -9,7 +9,6 @@ import { buildMoreMenuItems, MessageActionBar } from "@/components/mail/MessageA
 import { MessageHeaderMeta } from "@/components/mail/MessageHeaderMeta";
 import { MessageLocalToolbar } from "@/components/mail/MessageLocalToolbar";
 import type { Folder } from "@/components/mail/SidebarNav";
-import { Button } from "@/components/ui/button";
 import { useI18n, useT } from "@/i18n/I18nProvider";
 
 type Props = {
@@ -89,13 +88,7 @@ export function MessageReader({
 }: Props) {
   const t = useT();
   const { intlLocale } = useI18n();
-  const [htmlView, setHtmlView] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-
-  useEffect(() => {
-    if (!mail) return;
-    setHtmlView(hasHtmlBody(mail));
-  }, [mail?.seq, mail?.htmlBody, mail?.body]);
 
   if (!mail) {
     return (
@@ -113,7 +106,6 @@ export function MessageReader({
     mail,
     folder,
     pending,
-    htmlView,
     onMarkRead,
     onTrash,
     onRestore,
@@ -126,7 +118,6 @@ export function MessageReader({
     onPrint,
     onViewDetails,
     onViewHeaders,
-    onViewHtml: () => setHtmlView((v) => !v),
     onReportPhishing,
     onDeleteAll,
   };
@@ -213,29 +204,8 @@ export function MessageReader({
           </div>
         </div>
 
-        {htmlAvailable ? (
-          <div className="flex gap-2 px-4 py-2 md:px-6">
-            <Button
-              type="button"
-              variant={htmlView ? "default" : "outline"}
-              className="h-8 text-xs"
-              onClick={() => setHtmlView(true)}
-            >
-              HTML
-            </Button>
-            <Button
-              type="button"
-              variant={!htmlView ? "default" : "outline"}
-              className="h-8 text-xs"
-              onClick={() => setHtmlView(false)}
-            >
-              Plain text
-            </Button>
-          </div>
-        ) : null}
-
         <div className="px-4 py-4 md:px-6">
-          {htmlView && htmlAvailable && htmlContent ? (
+          {htmlAvailable && htmlContent ? (
             <HtmlMessageBody html={htmlContent} title={t("mail.htmlMessage")} />
           ) : (
             <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">

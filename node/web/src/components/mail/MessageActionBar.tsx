@@ -18,7 +18,6 @@ import { useState } from "react";
 import { ActionSheet, type ActionSheetItem } from "@/components/mobile/ActionSheet";
 import { Button } from "@/components/ui/button";
 import type { Mail as MailType } from "@/lib/mail";
-import { hasHtmlBody } from "@/lib/mail";
 import { useT } from "@/i18n/I18nProvider";
 import type { MessageKey } from "@/i18n/messages";
 
@@ -26,7 +25,6 @@ type Props = {
   mail: MailType;
   folder: string;
   pending?: boolean;
-  htmlView?: boolean;
   inline?: boolean;
   onMarkRead: (read: boolean) => void;
   onTrash: () => void;
@@ -40,7 +38,6 @@ type Props = {
   onPrint: () => void;
   onViewDetails: () => void;
   onViewHeaders: () => void;
-  onViewHtml: () => void;
   onReportPhishing: () => void;
   onDeleteAll?: () => void;
 };
@@ -51,7 +48,6 @@ export function buildMoreMenuItems(props: Props, t: TFn): ActionSheetItem[] {
   const {
     folder,
     mail,
-    htmlView,
     onStar,
     onArchive,
     onSpam,
@@ -59,7 +55,6 @@ export function buildMoreMenuItems(props: Props, t: TFn): ActionSheetItem[] {
     onPrint,
     onViewDetails,
     onViewHeaders,
-    onViewHtml,
     onReportPhishing,
     onDeleteAll,
     onRestore,
@@ -103,13 +98,6 @@ export function buildMoreMenuItems(props: Props, t: TFn): ActionSheetItem[] {
     { label: t("toolbar.viewHeaders"), icon: <FileText className="h-4 w-4" />, onClick: onViewHeaders },
   );
 
-  if (hasHtmlBody(mail)) {
-    items.push({
-      label: htmlView ? t("toolbar.viewPlainText") : t("toolbar.viewHtml"),
-      icon: <FileText className="h-4 w-4" />,
-      onClick: onViewHtml,
-    });
-  }
   items.push({
     label: t("toolbar.reportPhishing"),
     className: "text-destructive",
