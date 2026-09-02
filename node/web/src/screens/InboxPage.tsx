@@ -249,8 +249,9 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   };
 
   useEffect(() => {
+    if (isMobile && mobilePane !== "reader") return;
     markOpened(sel);
-  }, [sel?.seq, sel?.read, sel?.direction, sel?.trashed, markOpened]);
+  }, [sel?.seq, sel?.read, sel?.direction, sel?.trashed, markOpened, isMobile, mobilePane]);
 
   const changeFolder = (f: Folder) => {
     setFolder(f);
