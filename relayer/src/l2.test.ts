@@ -8,7 +8,7 @@ import { createBlobStore } from "../../dal/src/storage.ts";
 import { generateNodeServerKey } from "../../node/src/keys.ts";
 import { startNode, type RunningNode } from "../../node/src/node.ts";
 import { sendSmtp } from "../../node/src/smtpSend.ts";
-import { isOptedIn, nameRecordOf } from "./anvil.ts";
+import { isOptedIn, mailboxGenerationOf, nameRecordOf } from "./anvil.ts";
 import { defaultL2RpcUrl, deployRegistryOnL2, l2Chain, p256verifyIsNative, readL2RelayerEnv } from "./l2.ts";
 import {
   optInViaRelayer,
@@ -73,7 +73,7 @@ describe.skipIf(!env)("Sepolia first-receive seam", { timeout: 180_000 }, () => 
           const [, , dekPublic, wrappedDek] = await nameRecordOf(handle, n);
           return { dekPublic, wrappedDek };
         },
-        mailboxGeneration: (name) => mailboxGenerationOf(stack, name),
+        mailboxGeneration: (name) => mailboxGenerationOf(handle, name),
       },
     });
   }, 180_000);
