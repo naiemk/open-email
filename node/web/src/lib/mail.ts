@@ -150,12 +150,36 @@ export async function fetchBlob(name: string, cid: string): Promise<Uint8Array> 
   return new Uint8Array(await res.arrayBuffer());
 }
 
+export function parseOuterRfc822Headers(raw: string): { from: string; to: string; subject: string } {
+  const normalized = raw.includes("\r\n") ? raw : raw.replace(/\n/g, "\r\n");
+  const split = normalized.indexOf("\r\n\r\n");
+  const headerBlock = split === -1 ? normalized : normalized.slice(0, split);
+  const get = (name: string) => {
+    const lines = headerBlock.split("\r\n");
+    let value = "";
+    for (const line of lines) {
+      const m = line.match(/^([^:]+):\s*(.*)$/);
+      if (!m) continue;
+      if (m[1]!.toLowerCase() === name.toLowerCase()) {
+        value = m[2]!.trim();
+        continue;
+      }
+      if (value && /^[ \t]/.test(line)) {
+        value += ` ${line.trim()}`;
+      }
+    }
+    return value;
+  };
+  return { from: get("From"), to: get("To"), subject: get("Subject") };
+}
+
 export async function decryptRows(
   name: string,
   rows: IndexRow[],
   dekPrivate: Uint8Array,
   decryptFailedBody = "Could not decrypt this message.",
   openPgpPrivateArmored?: string,
+  sentE2eeBody = "This message was sent end-to-end encrypted. Only the recipient can read the body.",
 ): Promise<Mail[]> {
   const mails: Mail[] = [];
   for (const row of rows) {
@@ -166,6 +190,22 @@ export async function decryptRows(
       if (openPgpPrivateArmored) {
         const { looksLikeOpenPgpMessage, decryptOpenPgpRfc822 } = await import("@/lib/openpgp-mail");
         if (looksLikeOpenPgpMessage(rawRfc822)) {
+          if (row.direction === "out") {
+            // Stored sent copy is encrypted to the recipient's key, not ours.
+            openPgpEncrypted = true;
+            const outer = parseOuterRfc822Headers(rawRfc822);
+            mails.push({
+              ...row,
+              from: outer.from,
+              to: outer.to,
+              subject: outer.subject || `Message #${row.seq}`,
+              body: sentE2eeBody,
+              rawRfc822,
+              attachments: [],
+              openPgpEncrypted,
+            });
+            continue;
+          }
           rawRfc822 = await decryptOpenPgpRfc822(rawRfc822, openPgpPrivateArmored);
           openPgpEncrypted = true;
         }

@@ -61,6 +61,30 @@ if "command:" not in text:
     p.write_text(text)
 PY
 
+python3 - "$ROOT/dist/DNS-SKILL.md" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+p = Path(sys.argv[1])
+text = p.read_text()
+if "openpgpkey.testnet.crypted.email" in text:
+    raise SystemExit(0)
+match = re.search(r"\| `testnet\.crypted\.email` \| A \| `([^`]+)` \|", text)
+if not match:
+    raise SystemExit(f"DNS-SKILL.md: testnet row not found in {p}")
+ip = match.group(1)
+row = f"| `testnet.crypted.email` | A | `{ip}` |"
+extra = (
+    f"{row}\n"
+    f"| `openpgpkey.testnet.crypted.email` | A | `{ip}` |\n"
+    "\n"
+    "The `openpgpkey` host enables WKD **advanced method** (Proton and other clients). "
+    "The node also serves advanced paths on the main hostname, but some clients require this subdomain."
+)
+p.write_text(text.replace(row, extra, 1))
+PY
+
 cat >> "$ROOT/dist/README.md" <<'EOF'
 
 ## open-email notes

@@ -33,6 +33,7 @@ import { SidebarNav, type Folder } from "@/components/mail/SidebarNav";
 import { MessageList } from "@/components/mail/MessageList";
 import { MessageReader } from "@/components/mail/MessageReader";
 import { ComposeModal, type ComposeMode } from "@/components/mail/ComposeModal";
+import { SendProgressToast, type SendProgress } from "@/components/mail/SendProgressToast";
 import { MailToolbar } from "@/components/mail/MailToolbar";
 import { LabelPicker } from "@/components/mail/LabelPicker";
 import { MailDetailsModal, MailHeadersModal } from "@/components/mail/MailDetailsModal";
@@ -99,6 +100,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const openPgpPrivateRef = useRef<string | undefined>();
   const [recipientE2ee, setRecipientE2ee] = useState<boolean | null>(null);
+  const [sendProgress, setSendProgress] = useState<SendProgress>(null);
   const { getTurnstile, containerRef: turnstileContainerRef } = useTurnstile(meta);
 
   useEffect(() => {
@@ -126,6 +128,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         session.dekPrivate,
         t("errors.decryptFailed"),
         openPgpPrivateRef.current,
+        t("mail.sentE2eeBody"),
       ),
     );
     setLabels(await fetchLabels(session.name).catch(() => []));
@@ -312,8 +315,10 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     }
     void run("send", async () => {
       setError("");
+      setSendProgress("sending");
       const to = composeTo.trim();
       if (!to || !to.includes("@")) {
+        setSendProgress(null);
         setError(t("errors.invalidRecipient"));
         return;
       }
@@ -357,6 +362,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         ),
       });
       if (!res.ok) {
+        setSendProgress(null);
         let err = t("errors.sendFailed");
         const ct = res.headers.get("content-type") ?? "";
         if (res.status === 413) {
@@ -375,8 +381,11 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       setComposeBody("");
       setComposeAttachments([]);
       setFolder("sent");
+      setSendProgress("success");
+      window.setTimeout(() => setSendProgress(null), 2500);
       await reloadCore();
     }).catch((e) => {
+      setSendProgress(null);
       setError(localizeError(messages, e));
     });
   };
@@ -697,6 +706,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         }}
         onLogout={onLogout}
       />
+      <SendProgressToast status={sendProgress} />
     </div>
   );
 }
