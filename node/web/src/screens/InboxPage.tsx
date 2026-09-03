@@ -126,6 +126,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         session.dekPrivate,
         t("errors.decryptFailed"),
         openPgpPrivateRef.current,
+        t("mail.sentE2eeBody"),
       ),
     );
     setLabels(await fetchLabels(session.name).catch(() => []));

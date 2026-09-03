@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { getHtmlForView, hasHtmlBody, parseRfc822, wrapHtmlForView } from "./mail.ts";
+import { getHtmlForView, hasHtmlBody, parseOuterRfc822Headers, parseRfc822, wrapHtmlForView } from "./mail.ts";
+import { wrapPgpMime } from "@client/openpgp-identity.ts";
+
+describe("parseOuterRfc822Headers", () => {
+  it("reads From/To/Subject from PGP/MIME outer wrapper", () => {
+    const mime = wrapPgpMime(
+      "-----BEGIN PGP MESSAGE-----\r\n\r\nx\r\n-----END PGP MESSAGE-----",
+      "alice@testnet.crypted.email",
+      "bob@protonmail.com",
+      "Hello",
+    );
+    expect(parseOuterRfc822Headers(mime)).toEqual({
+      from: "alice@testnet.crypted.email",
+      to: "bob@protonmail.com",
+      subject: "Hello",
+    });
+  });
+});
 
 describe("parseRfc822", () => {
   it("parses plain text messages", async () => {
