@@ -95,7 +95,6 @@ export function ComposeModal({
         type="button"
         className="absolute inset-0 hidden bg-black/20 md:block"
         aria-label={t("common.close")}
-        disabled={pending}
         onClick={onClose}
       />
       <div className="relative z-10 flex h-full w-full flex-col overflow-hidden bg-white md:h-auto md:max-h-[90vh] md:max-w-[640px] md:rounded-xl md:border md:border-border md:shadow-2xl">
@@ -103,8 +102,7 @@ export function ComposeModal({
           <span className="text-sm font-medium">{t(MODE_KEYS[mode])}</span>
           <button
             type="button"
-            className="text-lg leading-none opacity-80 hover:opacity-100 disabled:opacity-40"
-            disabled={pending}
+            className="text-lg leading-none opacity-80 hover:opacity-100"
             onClick={onClose}
           >
             <X className="h-5 w-5" />

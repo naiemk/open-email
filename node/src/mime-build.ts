@@ -27,12 +27,25 @@ export function buildMimeEntity(input: {
   const attachments = input.attachments ?? [];
   const text = encodeTextBody(input.body);
   if (!attachments.length) {
+    const boundary = `----=_OE_alt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    const html = encodeTextBody(plainBodyToHtml(input.body));
     return [
       ...headers,
-      `Content-Type: text/plain; charset=utf-8`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
       `Content-Transfer-Encoding: ${text.encoding}`,
       "",
       text.content,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/html; charset=utf-8",
+      `Content-Transfer-Encoding: ${html.encoding}`,
+      "",
+      html.content,
+      "",
+      `--${boundary}--`,
       "",
     ].join("\r\n");
   }
@@ -107,6 +120,13 @@ function encodeTextBody(body: string): { encoding: "7bit" | "base64"; content: s
 function encodeSubject(subject: string): string {
   if (/^[\x20-\x7E]*$/.test(subject)) return subject;
   return `=?UTF-8?B?${utf8ToBase64(subject)}?=`;
+}
+
+/** Plain text → minimal HTML; linkify crypted.email for signature line. */
+export function plainBodyToHtml(body: string): string {
+  const escaped = body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const linked = escaped.replace(/\bcrypted\.email\b/g, '<a href="https://crypted.email">crypted.email</a>');
+  return linked.replace(/\r\n|\n/g, "<br>\n");
 }
 
 function wrapBase64(raw: string): string {

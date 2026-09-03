@@ -1,5 +1,4 @@
 import { Paperclip, Star } from "lucide-react";
-import { EncryptionLock } from "@/components/mail/EncryptionLock";
 import { Input } from "@/components/ui/input";
 import type { Mail } from "@/lib/mail";
 import { formatMailWeekday, isUnread, senderInitial } from "@/lib/mail";
@@ -73,7 +72,6 @@ export function MessageList({
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          <EncryptionLock e2ee={Boolean(m.openPgpEncrypted)} className="h-3 w-3" />
                           {m.attachments.length > 0 ? <Paperclip className="h-3 w-3" /> : null}
                           {formatMailWeekday(m.time, intlLocale)}
                         </span>
