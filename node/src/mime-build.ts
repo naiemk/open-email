@@ -12,7 +12,18 @@ export function buildRfc822(input: {
   attachments?: OutboundAttachment[];
 }): string {
   const subject = encodeSubject(input.subject);
-  const headers = [`From: ${input.mailFrom}`, `To: ${input.to}`, `Subject: ${subject}`, "MIME-Version: 1.0"];
+  const entity = buildMimeEntity({ body: input.body, attachments: input.attachments });
+  return [`From: ${input.mailFrom}`, `To: ${input.to}`, `Subject: ${subject}`, entity].join("\r\n");
+}
+
+/**
+ * MIME entity only (no From/To/Subject). Used as the plaintext inside PGP/MIME (RFC 3156).
+ */
+export function buildMimeEntity(input: {
+  body: string;
+  attachments?: OutboundAttachment[];
+}): string {
+  const headers = ["MIME-Version: 1.0"];
   const attachments = input.attachments ?? [];
   const text = encodeTextBody(input.body);
   if (!attachments.length) {

@@ -321,14 +321,11 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       const from = smtpFrom(meta.domain, session.name);
       let preencryptedRfc822: string | undefined;
       const { lookupWkdPublicKey, encryptForOpenPgp, wrapPgpMime } = await import("@/lib/openpgp-mail");
-      const { buildRfc822 } = await import("../../../src/mime-build.ts");
       const recipientKey = await lookupWkdPublicKey(to);
       setRecipientE2ee(Boolean(recipientKey));
       if (recipientKey) {
-        const plain = buildRfc822({
-          mailFrom: from,
-          to,
-          subject: composeSubject,
+        const { buildMimeEntity } = await import("../../../src/mime-build.ts");
+        const entity = buildMimeEntity({
           body: composeBody,
           attachments: composeAttachments
             .filter((a) => a.contentBase64)
@@ -338,7 +335,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
               contentBase64: a.contentBase64!,
             })),
         });
-        const ct = await encryptForOpenPgp(plain, recipientKey);
+        const ct = await encryptForOpenPgp(entity, recipientKey);
         preencryptedRfc822 = wrapPgpMime(ct, from, to, composeSubject || "...");
       }
       const res = await fetch("/send", {

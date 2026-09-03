@@ -82,19 +82,19 @@ export async function publicKeyFromWkdBytes(bytes: Uint8Array): Promise<string |
   }
 }
 
-/** Encrypt a UTF-8 MIME/RFC822 message for an OpenPGP recipient (binary message). */
+/** Encrypt a UTF-8 MIME entity for an OpenPGP recipient; returns ASCII-armored ciphertext. */
 export async function encryptForOpenPgp(
-  plaintextRfc822: string,
+  plaintextMime: string,
   recipientPublicArmored: string,
-): Promise<Uint8Array> {
+): Promise<string> {
   const publicKey = await readOpenPgpPublic(recipientPublicArmored);
-  const message = await openpgp.createMessage({ text: plaintextRfc822 });
+  const message = await openpgp.createMessage({ text: plaintextMime });
   const encrypted = await openpgp.encrypt({
     message,
     encryptionKeys: publicKey,
-    format: "binary",
+    format: "armored",
   });
-  return encrypted instanceof Uint8Array ? encrypted : new Uint8Array(encrypted as ArrayBuffer);
+  return String(encrypted);
 }
 
 /** Decrypt an OpenPGP binary or armored message to UTF-8 text. */
@@ -122,27 +122,18 @@ export function looksLikeOpenPgpMessage(rfc822: string): boolean {
   return false;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 /**
- * Build a minimal RFC822 that carries OpenPGP-encrypted MIME (PGP/MIME).
- * `encryptedBody` is the binary OpenPGP message (as bytes), base64-encoded in the part.
+ * RFC 3156 PGP/MIME wrapper. `armoredCiphertext` is a full BEGIN/END PGP MESSAGE block.
+ * Outer headers stay clear; only the MIME entity inside the ciphertext is confidential.
  */
-export function wrapPgpMime(encryptedBinary: Uint8Array, from: string, to: string, subject: string): string {
+export function wrapPgpMime(
+  armoredCiphertext: string,
+  from: string,
+  to: string,
+  subject: string,
+): string {
   const boundary = `oe-pgp-${Date.now().toString(36)}`;
-  const raw = bytesToBase64(encryptedBinary);
-  const b64 = raw.replace(/(.{76})/g, "$1\r\n");
+  const armor = armoredCiphertext.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n").trim() + "\r\n";
   const now = new Date();
   const messageId = `<${now.getTime().toString(36)}.${Math.random().toString(36).slice(2, 10)}@${from.split("@")[1] || "localhost"}>`;
   return [
@@ -158,18 +149,26 @@ export function wrapPgpMime(encryptedBinary: Uint8Array, from: string, to: strin
     "Content-Type: application/pgp-encrypted",
     "",
     "Version: 1",
-    `--${boundary}`,
-    "Content-Type: application/octet-stream; name=\"encrypted.asc\"",
-    "Content-Disposition: inline; filename=\"encrypted.asc\"",
-    "Content-Transfer-Encoding: base64",
     "",
-    b64,
+    `--${boundary}`,
+    'Content-Type: application/octet-stream; name="encrypted.asc"',
+    'Content-Disposition: inline; filename="encrypted.asc"',
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    armor,
     `--${boundary}--`,
     "",
   ].join("\r\n");
 }
 
-/** Extract OpenPGP ciphertext bytes from a PGP/MIME or armored RFC822. */
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Extract OpenPGP ciphertext bytes or armor from a PGP/MIME or inline armored RFC822. */
 export async function extractOpenPgpCiphertext(rfc822: string): Promise<Uint8Array | string> {
   if (/-----BEGIN PGP MESSAGE-----/.test(rfc822)) {
     const start = rfc822.indexOf("-----BEGIN PGP MESSAGE-----");
