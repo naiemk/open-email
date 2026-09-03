@@ -22,6 +22,9 @@ For each hostname, create an **A** record with the value in the table (TTL auto 
 | Hostname | Type | Value |
 |----------|------|-------|
 | `testnet.crypted.email` | A | `57.131.150.182` |
+| `openpgpkey.testnet.crypted.email` | A | `57.131.150.182` |
+
+The `openpgpkey` host enables WKD **advanced method** (Proton and other clients). The node also serves advanced paths on the main hostname, but some clients require this subdomain.
 
 Do **not** create a CNAME for the apex unless the user explicitly asks. Prefer A records for all names listed.
 

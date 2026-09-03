@@ -77,6 +77,7 @@ export async function lookupWkdPublicKey(email: string): Promise<string | undefi
   const hu = wkdHuHash(local);
   const urls = [
     `https://openpgpkey.${domain}/.well-known/openpgpkey/${domain}/hu/${hu}?l=${encodeURIComponent(local)}`,
+    `https://${domain}/.well-known/openpgpkey/${domain}/hu/${hu}?l=${encodeURIComponent(local)}`,
     `https://${domain}/.well-known/openpgpkey/hu/${hu}?l=${encodeURIComponent(local)}`,
   ];
   for (const url of urls) {
