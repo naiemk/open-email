@@ -1,11 +1,11 @@
 import { bytesToHex, hexToBytes, type Hex } from "viem";
-import * as openpgp from "openpgp";
 import {
   decryptOpenPgp,
   encryptForOpenPgp,
   extractOpenPgpCiphertext,
   generateOpenPgpIdentity,
   looksLikeOpenPgpMessage,
+  publicKeyFromWkdBytes,
   unwrapOpenPgpPrivate,
   wrapOpenPgpPrivate,
   wrapPgpMime,
@@ -20,6 +20,7 @@ export {
   decryptOpenPgp,
   extractOpenPgpCiphertext,
   wkdHuHash,
+  publicKeyFromWkdBytes,
 };
 
 export type StoredOpenPgp = {
@@ -82,11 +83,9 @@ export async function lookupWkdPublicKey(email: string): Promise<string | undefi
     try {
       const res = await fetch(url, { method: "GET" });
       if (!res.ok) continue;
-      const text = await res.text();
-      if (!text.includes("BEGIN PGP PUBLIC KEY")) continue;
-      // Validate parse
-      await openpgp.readKey({ armoredKey: text });
-      return text;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const armored = await publicKeyFromWkdBytes(bytes);
+      if (armored) return armored;
     } catch {
       // try next
     }
