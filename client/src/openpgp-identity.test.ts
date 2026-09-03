@@ -25,8 +25,9 @@ describe("openpgp identity (DEK-wrapped OpenPGP key)", () => {
 
   it("encrypts and decrypts round-trip with generated OpenPGP keys", async () => {
     const id = await generateOpenPgpIdentity("alice@testnet.crypted.email");
-    const plain = "From: a\r\nTo: b\r\nSubject: hi\r\n\r\nsecret body";
+    const plain = "Content-Type: text/plain; charset=utf-8\r\n\r\nsecret body";
     const ct = await encryptForOpenPgp(plain, id.publicArmored);
+    expect(ct).toContain("BEGIN PGP MESSAGE");
     const out = await decryptOpenPgp(ct, id.privateArmored);
     expect(out.replace(/\r\n/g, "\n")).toBe(plain.replace(/\r\n/g, "\n"));
   });
@@ -42,14 +43,18 @@ describe("openpgp identity (DEK-wrapped OpenPGP key)", () => {
     expect(await decryptOpenPgp(ct, recovered)).toBe("hello");
   });
 
-  it("builds PGP/MIME and extracts ciphertext for decrypt", async () => {
+  it("builds RFC 3156 PGP/MIME with armored ciphertext", async () => {
     const id = await generateOpenPgpIdentity("carol@example.com");
-    const inner = "From: x\r\nTo: y\r\nSubject: z\r\n\r\nbody";
+    const inner = "Content-Type: text/plain; charset=utf-8\r\n\r\nbody";
     const ct = await encryptForOpenPgp(inner, id.publicArmored);
     const mime = wrapPgpMime(ct, "a@x", "b@y", "z");
     expect(looksLikeOpenPgpMessage(mime)).toBe(true);
+    expect(mime).toMatch(/multipart\/encrypted/);
+    expect(mime).toMatch(/Content-Transfer-Encoding: 7bit/);
     expect(mime).toMatch(/Date:/);
     expect(mime).toMatch(/Message-ID:/);
+    expect(mime).toMatch(/Version: 1\r\n\r\n--/);
+    expect(mime).toContain("BEGIN PGP MESSAGE");
     const extracted = await extractOpenPgpCiphertext(mime);
     const out = await decryptOpenPgp(extracted, id.privateArmored);
     expect(out.replace(/\r\n/g, "\n")).toBe(inner.replace(/\r\n/g, "\n"));
