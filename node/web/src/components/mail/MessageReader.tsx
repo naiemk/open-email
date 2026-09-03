@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
+import { EncryptionLock } from "@/components/mail/EncryptionLock";
 import { ActionSheet } from "@/components/mobile/ActionSheet";
 import { MobileReaderHeader } from "@/components/mobile/MobileReaderHeader";
 import type { Mail } from "@/lib/mail";
@@ -141,8 +142,9 @@ export function MessageReader({
       <ActionSheet open={moreOpen} onClose={() => setMoreOpen(false)} items={buildMoreMenuItems(actionBarProps, t)} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <h2 className="px-4 pt-4 text-xl font-semibold text-foreground md:px-6 md:pt-6">
-          {mail.subject || t("mail.noSubject")}
+        <h2 className="flex items-start gap-2 px-4 pt-4 text-xl font-semibold text-foreground md:px-6 md:pt-6">
+          <EncryptionLock e2ee={Boolean(mail.openPgpEncrypted)} className="mt-1 h-5 w-5" />
+          <span className="min-w-0 flex-1">{mail.subject || t("mail.noSubject")}</span>
         </h2>
 
         <div className="hidden px-6 py-3 md:block">

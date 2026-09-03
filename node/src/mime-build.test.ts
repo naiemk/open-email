@@ -2,16 +2,18 @@ import { describe, expect, it } from "vitest";
 import { attachmentContentType, buildRfc822 } from "./mime-build.ts";
 
 describe("buildRfc822", () => {
-  it("builds plain text when there are no attachments", () => {
+  it("builds multipart/alternative with linked crypted.email in HTML when there are no attachments", () => {
     const msg = buildRfc822({
       mailFrom: "alice@node.test",
       to: "bob@example.com",
       subject: "Hello",
-      body: "Hi Bob",
+      body: "Hi Bob\n\nSent with crypted.email secure mail.",
     });
     expect(msg).toContain("From: alice@node.test");
     expect(msg).toContain("Subject: Hello");
+    expect(msg).toContain("multipart/alternative");
     expect(msg).toContain("Hi Bob");
+    expect(msg).toContain('<a href="https://crypted.email">crypted.email</a>');
     expect(msg).not.toContain("multipart/mixed");
   });
 

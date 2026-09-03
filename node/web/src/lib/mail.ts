@@ -206,8 +206,19 @@ export async function decryptRows(
             });
             continue;
           }
+          const outer = parseOuterRfc822Headers(rawRfc822);
           rawRfc822 = await decryptOpenPgpRfc822(rawRfc822, openPgpPrivateArmored);
           openPgpEncrypted = true;
+          const parsed = await parseRfc822(rawRfc822);
+          mails.push({
+            ...row,
+            ...parsed,
+            from: parsed.from || outer.from,
+            to: parsed.to || outer.to,
+            subject: parsed.subject || outer.subject || `Message #${row.seq}`,
+            openPgpEncrypted,
+          });
+          continue;
         }
       }
       mails.push({ ...row, ...(await parseRfc822(rawRfc822)), openPgpEncrypted });
