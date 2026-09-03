@@ -11,6 +11,7 @@ import {
   wrapOpenPgpPrivate,
   wrapPgpMime,
   zbase32Encode,
+  publicKeyFromWkdBytes,
 } from "./openpgp-identity.ts";
 
 describe("openpgp identity (DEK-wrapped OpenPGP key)", () => {
@@ -47,8 +48,24 @@ describe("openpgp identity (DEK-wrapped OpenPGP key)", () => {
     const ct = await encryptForOpenPgp(inner, id.publicArmored);
     const mime = wrapPgpMime(ct, "a@x", "b@y", "z");
     expect(looksLikeOpenPgpMessage(mime)).toBe(true);
+    expect(mime).toMatch(/Date:/);
+    expect(mime).toMatch(/Message-ID:/);
     const extracted = await extractOpenPgpCiphertext(mime);
     const out = await decryptOpenPgp(extracted, id.privateArmored);
     expect(out.replace(/\r\n/g, "\n")).toBe(inner.replace(/\r\n/g, "\n"));
+  });
+
+  it("parses binary WKD public keys (Proton-style) as well as armored", async () => {
+    const openpgp = await import("openpgp");
+    const id = await generateOpenPgpIdentity("dave@protonmail.com");
+    const key = await openpgp.readKey({ armoredKey: id.publicArmored });
+    const binary = key.write();
+    const fromBinary = await publicKeyFromWkdBytes(binary);
+    expect(fromBinary).toContain("BEGIN PGP PUBLIC KEY");
+    const ct = await encryptForOpenPgp("ping", fromBinary!);
+    expect(await decryptOpenPgp(ct, id.privateArmored)).toBe("ping");
+
+    const fromArmor = await publicKeyFromWkdBytes(new TextEncoder().encode(id.publicArmored));
+    expect(fromArmor).toContain("BEGIN PGP PUBLIC KEY");
   });
 });

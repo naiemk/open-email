@@ -273,6 +273,31 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     markOpened(sel);
   }, [sel?.seq, sel?.read, sel?.direction, sel?.trashed, markOpened, isMobile, mobilePane]);
 
+  useEffect(() => {
+    if (!composing) return;
+    const to = composeTo.trim();
+    if (!to.includes("@")) {
+      setRecipientE2ee(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { lookupWkdPublicKey } = await import("@/lib/openpgp-mail");
+          const key = await lookupWkdPublicKey(to);
+          if (!cancelled) setRecipientE2ee(Boolean(key));
+        } catch {
+          if (!cancelled) setRecipientE2ee(false);
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [composeTo, composing]);
+
   const changeFolder = (f: Folder) => {
     setFolder(f);
     setSelectedSeqs(new Set());

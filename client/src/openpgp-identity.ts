@@ -63,6 +63,25 @@ export async function readOpenPgpPrivate(armored: string): Promise<openpgp.Priva
   return openpgp.readPrivateKey({ armoredKey: armored });
 }
 
+/**
+ * Parse a WKD response body (Proton often serves **binary** OpenPGP; some hosts armor).
+ * Returns armored public key or undefined.
+ */
+export async function publicKeyFromWkdBytes(bytes: Uint8Array): Promise<string | undefined> {
+  const head = new TextDecoder("utf-8", { fatal: false }).decode(bytes.slice(0, 64));
+  if (head.includes("BEGIN PGP PUBLIC KEY")) {
+    const text = new TextDecoder().decode(bytes);
+    await openpgp.readKey({ armoredKey: text });
+    return text;
+  }
+  try {
+    const key = await openpgp.readKey({ binaryKey: bytes });
+    return key.armor();
+  } catch {
+    return undefined;
+  }
+}
+
 /** Encrypt a UTF-8 MIME/RFC822 message for an OpenPGP recipient (binary message). */
 export async function encryptForOpenPgp(
   plaintextRfc822: string,
@@ -124,10 +143,14 @@ export function wrapPgpMime(encryptedBinary: Uint8Array, from: string, to: strin
   const boundary = `oe-pgp-${Date.now().toString(36)}`;
   const raw = bytesToBase64(encryptedBinary);
   const b64 = raw.replace(/(.{76})/g, "$1\r\n");
+  const now = new Date();
+  const messageId = `<${now.getTime().toString(36)}.${Math.random().toString(36).slice(2, 10)}@${from.split("@")[1] || "localhost"}>`;
   return [
     `From: ${from}`,
     `To: ${to}`,
     `Subject: ${subject}`,
+    `Date: ${now.toUTCString().replace(/GMT$/, "+0000")}`,
+    `Message-ID: ${messageId}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="${boundary}"`,
     "",
