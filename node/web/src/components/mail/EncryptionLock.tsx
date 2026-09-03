@@ -12,7 +12,7 @@ export function EncryptionLock({ e2ee, className = "h-4 w-4" }: Props) {
 
   return (
     <Lock
-      className={`shrink-0 ${className} ${e2ee ? "text-primary" : "text-muted-foreground"}`}
+      className={`shrink-0 ${className} ${e2ee ? "fill-primary/15 text-primary" : "text-muted-foreground/70"}`}
       aria-label={label}
       title={label}
     />

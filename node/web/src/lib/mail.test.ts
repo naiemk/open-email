@@ -16,6 +16,28 @@ describe("parseOuterRfc822Headers", () => {
       subject: "Hello",
     });
   });
+
+  it("merges outer headers when inner MIME entity has no From/Subject", async () => {
+    const outer = wrapPgpMime(
+      "-----BEGIN PGP MESSAGE-----\r\n\r\nx\r\n-----END PGP MESSAGE-----",
+      "Proton User <sender@proton.me>",
+      "bob@testnet.crypted.email",
+      "Encrypted subject",
+    );
+    const headers = parseOuterRfc822Headers(outer);
+    const inner = [
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Secret body from Proton",
+    ].join("\r\n");
+    const parsed = await parseRfc822(inner);
+    expect(parsed.from).toBe("");
+    expect(parsed.subject).toBe("");
+    expect(parsed.from || headers.from).toBe("Proton User <sender@proton.me>");
+    expect(parsed.subject || headers.subject).toBe("Encrypted subject");
+    expect(parsed.body).toContain("Secret body from Proton");
+  });
 });
 
 describe("parseRfc822", () => {

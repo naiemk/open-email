@@ -34,6 +34,7 @@ import { MessageList } from "@/components/mail/MessageList";
 import { MessageReader } from "@/components/mail/MessageReader";
 import { ComposeModal, type ComposeMode } from "@/components/mail/ComposeModal";
 import { SendProgressToast, type SendProgress } from "@/components/mail/SendProgressToast";
+import { initialComposeBody } from "@/lib/compose-signature";
 import { MailToolbar } from "@/components/mail/MailToolbar";
 import { LabelPicker } from "@/components/mail/LabelPicker";
 import { MailDetailsModal, MailHeadersModal } from "@/components/mail/MailDetailsModal";
@@ -101,6 +102,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const openPgpPrivateRef = useRef<string | undefined>();
   const [recipientE2ee, setRecipientE2ee] = useState<boolean | null>(null);
   const [sendProgress, setSendProgress] = useState<SendProgress>(null);
+  const [sendError, setSendError] = useState("");
   const { getTurnstile, containerRef: turnstileContainerRef } = useTurnstile(meta);
 
   useEffect(() => {
@@ -249,19 +251,24 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     if (!mail || mode === "new") {
       setComposeTo("");
       setComposeSubject("");
-      setComposeBody("");
+      setComposeBody(initialComposeBody("new"));
     } else if (mode === "reply") {
       setComposeTo(extractEmailAddress(mail.from));
       setComposeSubject(replySubject(mail.subject));
-      setComposeBody(quoteForReply(mail));
+      setComposeBody(initialComposeBody("reply", quoteForReply(mail)));
     } else if (mode === "replyAll") {
       setComposeTo(extractEmailAddress(mail.from));
       setComposeSubject(replySubject(mail.subject));
-      setComposeBody(quoteForReply(mail));
+      setComposeBody(initialComposeBody("replyAll", quoteForReply(mail)));
     } else {
       setComposeTo("");
       setComposeSubject(forwardSubject(mail.subject));
-      setComposeBody(`\n\n---------- Forwarded message ----------\nFrom: ${mail.from}\nSubject: ${mail.subject}\n\n${mail.body}`);
+      setComposeBody(
+        initialComposeBody(
+          "forward",
+          `---------- Forwarded message ----------\nFrom: ${mail.from}\nSubject: ${mail.subject}\n\n${mail.body}`,
+        ),
+      );
     }
     setComposing(true);
   };
@@ -313,80 +320,93 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
       setError(t("errors.busy"));
       return;
     }
+    const to = composeTo.trim();
+    if (!to || !to.includes("@")) {
+      setError(t("errors.invalidRecipient"));
+      return;
+    }
+    const subject = composeSubject;
+    const body = composeBody;
+    const attachments = composeAttachments.filter((a) => a.contentBase64);
+    const attachmentIds = composeAttachments.map((a) => a.id);
+    const pendingAttachments = [...composeAttachments];
+
+    setComposing(false);
+    setRecipientE2ee(null);
+    setComposeTo("");
+    setComposeSubject("");
+    setComposeBody("");
+    setComposeAttachments([]);
+    setSendError("");
+    setSendProgress("sending");
+
     void run("send", async () => {
-      setError("");
-      setSendProgress("sending");
-      const to = composeTo.trim();
-      if (!to || !to.includes("@")) {
-        setSendProgress(null);
-        setError(t("errors.invalidRecipient"));
-        return;
-      }
-      const turnstile = await getTurnstile();
-      const from = smtpFrom(meta.domain, session.name);
-      let preencryptedRfc822: string | undefined;
-      const { lookupWkdPublicKey, encryptForOpenPgp, wrapPgpMime } = await import("@/lib/openpgp-mail");
-      const recipientKey = await lookupWkdPublicKey(to);
-      setRecipientE2ee(Boolean(recipientKey));
-      if (recipientKey) {
-        const { buildMimeEntity } = await import("../../../src/mime-build.ts");
-        const entity = buildMimeEntity({
-          body: composeBody,
-          attachments: composeAttachments
-            .filter((a) => a.contentBase64)
-            .map((a) => ({
+      try {
+        const turnstile = await getTurnstile();
+        const from = smtpFrom(meta.domain, session.name);
+        let preencryptedRfc822: string | undefined;
+        const { lookupWkdPublicKey, encryptForOpenPgp, wrapPgpMime } = await import("@/lib/openpgp-mail");
+        const recipientKey = await lookupWkdPublicKey(to);
+        if (recipientKey) {
+          const { buildMimeEntity } = await import("../../../src/mime-build.ts");
+          const entity = buildMimeEntity({
+            body,
+            attachments: attachments.map((a) => ({
               filename: a.filename,
               mimeType: a.mimeType,
               contentBase64: a.contentBase64!,
             })),
-        });
-        const ct = await encryptForOpenPgp(entity, recipientKey);
-        preencryptedRfc822 = wrapPgpMime(ct, from, to, composeSubject || "...");
-      }
-      const res = await fetch("/send", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          preencryptedRfc822
-            ? { name: session.name, to, turnstile, preencryptedRfc822 }
-            : {
-                name: session.name,
-                to,
-                subject: composeSubject,
-                body: composeBody,
-                attachmentIds: composeAttachments.length
-                  ? composeAttachments.map((a) => a.id)
-                  : undefined,
-                turnstile,
-              },
-        ),
-      });
-      if (!res.ok) {
-        setSendProgress(null);
-        let err = t("errors.sendFailed");
-        const ct = res.headers.get("content-type") ?? "";
-        if (res.status === 413) {
-          err = t("errors.payloadTooLarge");
-        } else if (ct.includes("application/json")) {
-          const body = (await res.json()) as { error?: string };
-          err =
-            body.error === "turnstile" ? t("errors.turnstileRequired") : body.error ?? err;
+          });
+          const ct = await encryptForOpenPgp(entity, recipientKey);
+          preencryptedRfc822 = wrapPgpMime(ct, from, to, subject || "...");
         }
-        setError(err);
-        return;
+        const res = await fetch("/send", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            preencryptedRfc822
+              ? { name: session.name, to, turnstile, preencryptedRfc822 }
+              : {
+                  name: session.name,
+                  to,
+                  subject,
+                  body,
+                  attachmentIds: attachmentIds.length ? attachmentIds : undefined,
+                  turnstile,
+                },
+          ),
+        });
+        if (!res.ok) {
+          let err = t("errors.sendFailed");
+          const ct = res.headers.get("content-type") ?? "";
+          if (res.status === 413) {
+            err = t("errors.payloadTooLarge");
+          } else if (ct.includes("application/json")) {
+            const resBody = (await res.json()) as { error?: string };
+            err =
+              resBody.error === "turnstile" ? t("errors.turnstileRequired") : resBody.error ?? err;
+          }
+          setSendError(err);
+          setSendProgress("error");
+          window.setTimeout(() => setSendProgress(null), 4000);
+          return;
+        }
+        for (const att of pendingAttachments) {
+          void deleteComposeAttachment(session.name, att.id);
+        }
+        setComposeTo("");
+        setComposeSubject("");
+        setComposeBody("");
+        setComposeAttachments([]);
+        setFolder("sent");
+        setSendProgress("success");
+        window.setTimeout(() => setSendProgress(null), 2500);
+        await reloadCore();
+      } catch (e) {
+        setSendError(localizeError(messages, e));
+        setSendProgress("error");
+        window.setTimeout(() => setSendProgress(null), 4000);
       }
-      setComposing(false);
-      setComposeTo("");
-      setComposeSubject("");
-      setComposeBody("");
-      setComposeAttachments([]);
-      setFolder("sent");
-      setSendProgress("success");
-      window.setTimeout(() => setSendProgress(null), 2500);
-      await reloadCore();
-    }).catch((e) => {
-      setSendProgress(null);
-      setError(localizeError(messages, e));
     });
   };
 
@@ -648,7 +668,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
           </div>
         </div>
       </div>
-      {!composing ? <ComposeFab disabled={isPending("send")} onClick={() => openCompose("new")} /> : null}
+      {!composing ? <ComposeFab disabled={false} onClick={() => openCompose("new")} /> : null}
       <ComposeModal
         open={composing}
         mode={composeMode}
@@ -668,7 +688,6 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         onSend={send}
         recipientE2ee={recipientE2ee}
         onClose={() => {
-          if (isPending("send")) return;
           for (const att of composeAttachments) {
             void deleteComposeAttachment(session.name, att.id);
           }
@@ -706,7 +725,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         }}
         onLogout={onLogout}
       />
-      <SendProgressToast status={sendProgress} />
+      <SendProgressToast status={sendProgress} errorMessage={sendError} />
     </div>
   );
 }
