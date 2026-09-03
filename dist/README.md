@@ -28,5 +28,6 @@ Copy [`DNS-SKILL.md`](DNS-SKILL.md) into an AU agent browser extension. Domains 
 - **ui** is the **node** (HTTPS via host gateway; SMTP `0.0.0.0:25`).
 - Gateway `sites[]` send both `/` and `/api/` to `open-email-ui` so Turnstile/opt rate limits stay on the **node**.
 - Gateway default `client_max_body_size` is **25m** (supports compose attachments). Reload nginx after updating `dist/gateway/nginx.conf`.
+- OpenPGP WKD is served by the **node** at `/.well-known/openpgpkey/` (gateway must proxy that path to open-email-ui).
 - Images: `ghcr.io/naiemk/open-email-api:main` and `ghcr.io/naiemk/open-email-ui:main`.
 - Skip `install-nodes` only if you do not want the idle worker; SMTP and **DAL** live on the UI container.
