@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Hex } from "viem";
 import type { Meta } from "@/lib/api";
 import type { Session } from "@/App";
@@ -97,6 +97,8 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
   const [mobilePane, setMobilePane] = useState<"list" | "reader">("list");
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const openPgpPrivateRef = useRef<string | undefined>();
+  const [recipientE2ee, setRecipientE2ee] = useState<boolean | null>(null);
   const { getTurnstile, containerRef: turnstileContainerRef } = useTurnstile(meta);
 
   useEffect(() => {
@@ -107,13 +109,30 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
 
   const reloadCore = useCallback(async () => {
     setLoadError("");
+    if (session.optedIn && !openPgpPrivateRef.current) {
+      try {
+        const { ensureOpenPgpIdentity } = await import("@/lib/openpgp-mail");
+        const id = await ensureOpenPgpIdentity(session.name, meta.domain, session.dekPrivate);
+        openPgpPrivateRef.current = id.privateArmored;
+      } catch {
+        // best-effort WKD publish
+      }
+    }
     const rows = await fetchIndex(session.name);
-    setMails(await decryptRows(session.name, rows, session.dekPrivate, t("errors.decryptFailed")));
+    setMails(
+      await decryptRows(
+        session.name,
+        rows,
+        session.dekPrivate,
+        t("errors.decryptFailed"),
+        openPgpPrivateRef.current,
+      ),
+    );
     setLabels(await fetchLabels(session.name).catch(() => []));
     const st = (await (await fetch(`/storage/${encodeURIComponent(session.name)}`)).json()) as typeof storage;
     setStorage(st);
     onSessionUpdate({ optedIn: await fetchOptedIn(session.name, meta.nodeKey) });
-  }, [session, meta.nodeKey, onSessionUpdate, t]);
+  }, [session, meta.nodeKey, meta.domain, onSessionUpdate, t]);
 
   const reload = useCallback(
     () =>
@@ -223,6 +242,7 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
     setComposeMode(mode);
     setComposeAttachments([]);
     setError("");
+    setRecipientE2ee(null);
     if (!mail || mode === "new") {
       setComposeTo("");
       setComposeSubject("");
@@ -273,17 +293,46 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         return;
       }
       const turnstile = await getTurnstile();
-      const res = await fetch("/send", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-          name: session.name,
+      const from = smtpFrom(meta.domain, session.name);
+      let preencryptedRfc822: string | undefined;
+      const { lookupWkdPublicKey, encryptForOpenPgp, wrapPgpMime } = await import("@/lib/openpgp-mail");
+      const { buildRfc822 } = await import("../../../src/mime-build.ts");
+      const recipientKey = await lookupWkdPublicKey(to);
+      setRecipientE2ee(Boolean(recipientKey));
+      if (recipientKey) {
+        const plain = buildRfc822({
+          mailFrom: from,
           to,
           subject: composeSubject,
           body: composeBody,
-          attachmentIds: composeAttachments.length ? composeAttachments.map((a) => a.id) : undefined,
-          turnstile,
-        }),
+          attachments: composeAttachments
+            .filter((a) => a.contentBase64)
+            .map((a) => ({
+              filename: a.filename,
+              mimeType: a.mimeType,
+              contentBase64: a.contentBase64!,
+            })),
+        });
+        const ct = await encryptForOpenPgp(plain, recipientKey);
+        preencryptedRfc822 = wrapPgpMime(ct, from, to, composeSubject || "...");
+      }
+      const res = await fetch("/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          preencryptedRfc822
+            ? { name: session.name, to, turnstile, preencryptedRfc822 }
+            : {
+                name: session.name,
+                to,
+                subject: composeSubject,
+                body: composeBody,
+                attachmentIds: composeAttachments.length
+                  ? composeAttachments.map((a) => a.id)
+                  : undefined,
+                turnstile,
+              },
+        ),
       });
       if (!res.ok) {
         let err = t("errors.sendFailed");
@@ -586,12 +635,14 @@ export function InboxPage({ meta, session, onLogout, onSessionUpdate }: Props) {
         onAttachments={setComposeAttachments}
         onError={(msg) => setError(localizeError(messages, new Error(msg)))}
         onSend={send}
+        recipientE2ee={recipientE2ee}
         onClose={() => {
           if (isPending("send")) return;
           for (const att of composeAttachments) {
             void deleteComposeAttachment(session.name, att.id);
           }
           setComposeAttachments([]);
+          setRecipientE2ee(null);
           setComposing(false);
         }}
       />

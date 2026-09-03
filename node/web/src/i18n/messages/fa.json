@@ -63,6 +63,7 @@
   "mail.direction": "جهت",
   "mail.sequence": "توالی",
   "mail.attachments": "پیوست‌ها",
+  "mail.e2ee": "رمزنگاری سرتاسری",
   "mail.preview": "پیش‌نمایش",
   "mail.download": "دانلود",
   "mail.previewUnsupported": "پیش‌نمایش برای این نوع فایل در دسترس نیست.",
@@ -121,6 +122,8 @@
   "compose.uploading": "در حال بارگذاری…",
   "compose.sending": "در حال ارسال…",
   "compose.send": "ارسال",
+  "compose.e2ee": "کلید گیرنده یافت شد — این ارسال به‌صورت سرتاسری رمزنگاری می‌شود (OpenPGP).",
+  "compose.notE2ee": "کلید OpenPGP برای گیرنده وجود ندارد — این ارسال سرتاسری رمزنگاری نشده است.",
 
   "settings.title": "تنظیمات",
   "settings.account": "حساب",

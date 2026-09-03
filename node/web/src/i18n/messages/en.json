@@ -63,6 +63,7 @@
   "mail.direction": "Direction",
   "mail.sequence": "Sequence",
   "mail.attachments": "Attachments",
+  "mail.e2ee": "End-to-end encrypted",
   "mail.preview": "Preview",
   "mail.download": "Download",
   "mail.previewUnsupported": "Preview not available for this file type.",
@@ -120,6 +121,8 @@
   "compose.uploading": "Uploading…",
   "compose.sending": "Sending…",
   "compose.send": "Send",
+  "compose.e2ee": "Recipient key found — this send will be end-to-end encrypted (OpenPGP).",
+  "compose.notE2ee": "No OpenPGP key for recipient — this send is not end-to-end encrypted.",
 
   "settings.title": "Settings",
   "settings.account": "Account",

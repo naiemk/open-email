@@ -33,6 +33,8 @@ export default defineConfig({
       "/delete": "http://127.0.0.1:8787",
       "/send": "http://127.0.0.1:8787",
       "/compose-attachment": "http://127.0.0.1:8787",
+      "/openpgp": "http://127.0.0.1:8787",
+      "/.well-known": "http://127.0.0.1:8787",
       "/pair": "http://127.0.0.1:8787",
       "/pay": "http://127.0.0.1:8787",
       "/geo": "http://127.0.0.1:8787",

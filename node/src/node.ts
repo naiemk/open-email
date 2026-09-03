@@ -18,6 +18,8 @@ import { signDkim } from "./dkim.ts";
 import { createPairStore, handlePair, type PairStore } from "./pair.ts";
 import { handleServicePair } from "./service-pair.ts";
 import { createMailboxStateStore, type MailboxStateStore } from "./mailbox-state.ts";
+import { createOpenPgpKeyStore, type OpenPgpKeyStore } from "./openpgp-keys.ts";
+import { handleOpenPgpHttp } from "./openpgp-http.ts";
 import { serveUiAsset, uiDistExists } from "./ui-static.ts";
 import { resolveGeo, resolvePayLocale } from "./geo.ts";
 import { payStrings } from "./pay-i18n.ts";
@@ -69,6 +71,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
   const pair = createPairStore();
   const mailboxState = createMailboxStateStore(`${dataDir}/mailbox-state.json`);
   const composeAttachments = createComposeAttachmentStore(dataDir);
+  const openPgpKeys = createOpenPgpKeyStore(`${dataDir}/openpgp-keys.json`);
   const sendHits = createHitWindow();
   const optHits = createHitWindow();
   const now = () => config.send?.now?.() ?? Date.now();
@@ -177,6 +180,7 @@ export async function startNode(config: NodeConfig): Promise<RunningNode> {
       pair,
       mailboxState,
       composeAttachments,
+      openPgpKeys,
       takeSendSlot,
       takeOptSlot,
     );
@@ -269,6 +273,7 @@ async function handleHttp(
   pair: PairStore,
   mailboxState: MailboxStateStore,
   composeAttachments: ComposeAttachmentStore,
+  openPgpKeys: OpenPgpKeyStore,
   takeSendSlot: (name: string) => boolean,
   takeOptSlot: (name: string) => boolean,
 ): Promise<void> {
@@ -276,6 +281,17 @@ async function handleHttp(
   try {
     if (await handlePair(req, url, res, pair, credentialWraps)) return;
     if (await handleServicePair(req, url, res, config, credentialWraps)) return;
+    if (
+      await handleOpenPgpHttp(req, url, res, {
+        store: openPgpKeys,
+        domain: config.domain,
+        isOptedIn: (name, nodeKey) => config.registry.isOptedIn(name, nodeKey),
+        nodeKey: config.nodeKey,
+        mailboxName: resolveMailboxName,
+      })
+    ) {
+      return;
+    }
     if (
       config.signup &&
       (await handleSignup(req, url, res, config.signup, config.nodeKey, takeOptSlot))

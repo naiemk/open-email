@@ -63,6 +63,7 @@
   "mail.direction": "Direction",
   "mail.sequence": "Séquence",
   "mail.attachments": "Pièces jointes",
+  "mail.e2ee": "Chiffrement de bout en bout",
   "mail.preview": "Aperçu",
   "mail.download": "Télécharger",
   "mail.previewUnsupported": "Aperçu non disponible pour ce type de fichier.",
@@ -121,6 +122,8 @@
   "compose.uploading": "Téléversement…",
   "compose.sending": "Envoi…",
   "compose.send": "Envoyer",
+  "compose.e2ee": "Clé du destinataire trouvée — cet envoi sera chiffré de bout en bout (OpenPGP).",
+  "compose.notE2ee": "Aucune clé OpenPGP pour le destinataire — cet envoi n'est pas chiffré de bout en bout.",
 
   "settings.title": "Paramètres",
   "settings.account": "Compte",

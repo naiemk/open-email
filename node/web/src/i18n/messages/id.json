@@ -63,6 +63,7 @@
   "mail.direction": "Arah",
   "mail.sequence": "Urutan",
   "mail.attachments": "Lampiran",
+  "mail.e2ee": "Terenkripsi ujung-ke-ujung",
   "mail.preview": "Pratinjau",
   "mail.download": "Unduh",
   "mail.previewUnsupported": "Pratinjau tidak tersedia untuk jenis file ini.",
@@ -121,6 +122,8 @@
   "compose.uploading": "Mengunggah…",
   "compose.sending": "Mengirim…",
   "compose.send": "Kirim",
+  "compose.e2ee": "Kunci penerima ditemukan — pengiriman ini akan terenkripsi ujung-ke-ujung (OpenPGP).",
+  "compose.notE2ee": "Tidak ada kunci OpenPGP untuk penerima — pengiriman ini tidak terenkripsi ujung-ke-ujung.",
 
   "settings.title": "Pengaturan",
   "settings.account": "Akun",

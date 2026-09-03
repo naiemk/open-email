@@ -70,6 +70,16 @@ export function attachmentContentType(filename: string, mimeType: string): strin
   return mimeType?.trim() || "application/octet-stream";
 }
 
+function utf8ToBase64(text: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(text, "utf8").toString("base64");
+  }
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
 function encodeTextBody(body: string): { encoding: "7bit" | "base64"; content: string } {
   const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const asciiSafe =
@@ -79,14 +89,13 @@ function encodeTextBody(body: string): { encoding: "7bit" | "base64"; content: s
   }
   return {
     encoding: "base64",
-    content: wrapBase64(Buffer.from(normalized, "utf8").toString("base64")),
+    content: wrapBase64(utf8ToBase64(normalized)),
   };
 }
 
 function encodeSubject(subject: string): string {
   if (/^[\x20-\x7E]*$/.test(subject)) return subject;
-  const b64 = Buffer.from(subject, "utf8").toString("base64");
-  return `=?UTF-8?B?${b64}?=`;
+  return `=?UTF-8?B?${utf8ToBase64(subject)}?=`;
 }
 
 function wrapBase64(raw: string): string {

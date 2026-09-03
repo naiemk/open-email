@@ -77,6 +77,8 @@ export async function handleSend(
     turnstile?: string;
     attachmentIds?: string[];
     attachments?: OutboundAttachment[];
+    /** Client already built OpenPGP/MIME RFC822; node only DKIM-signs and delivers. */
+    preencryptedRfc822?: string;
   };
   if (!(await opts.send.turnstile.verify(body.turnstile ?? ""))) {
     json(res, 403, { error: "turnstile" });
@@ -97,30 +99,35 @@ export async function handleSend(
     return true;
   }
   const mailFrom = smtpFromAddress(opts.domain, name);
-  let attachments: OutboundAttachment[] | undefined;
-  if (body.attachmentIds?.length) {
-    if (!opts.composeAttachments) {
-      json(res, 500, { error: "attachments unavailable" });
-      return true;
+  let data: string;
+  if (body.preencryptedRfc822?.trim()) {
+    data = signDkim(body.preencryptedRfc822, opts.send.dkim, Math.floor((opts.send.now?.() ?? Date.now()) / 1000));
+  } else {
+    let attachments: OutboundAttachment[] | undefined;
+    if (body.attachmentIds?.length) {
+      if (!opts.composeAttachments) {
+        json(res, 500, { error: "attachments unavailable" });
+        return true;
+      }
+      try {
+        attachments = opts.composeAttachments.take(name, body.attachmentIds);
+      } catch {
+        json(res, 400, { error: "invalid attachment" });
+        return true;
+      }
+    } else if (body.attachments?.length) {
+      attachments = body.attachments;
     }
-    try {
-      attachments = opts.composeAttachments.take(name, body.attachmentIds);
-    } catch {
-      json(res, 400, { error: "invalid attachment" });
-      return true;
-    }
-  } else if (body.attachments?.length) {
-    attachments = body.attachments;
+    data = buildSignedMessage({
+      mailFrom,
+      to,
+      subject: body.subject ?? "",
+      body: body.body ?? "",
+      attachments,
+      dkim: opts.send.dkim,
+      t: Math.floor((opts.send.now?.() ?? Date.now()) / 1000),
+    });
   }
-  const data = buildSignedMessage({
-    mailFrom,
-    to,
-    subject: body.subject ?? "",
-    body: body.body ?? "",
-    attachments,
-    dkim: opts.send.dkim,
-    t: Math.floor((opts.send.now?.() ?? Date.now()) / 1000),
-  });
   const bytes = new TextEncoder().encode(data);
   try {
     await opts.ingest(name, bytes, "out");

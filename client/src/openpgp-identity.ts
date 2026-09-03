@@ -1,0 +1,166 @@
+import * as openpgp from "openpgp";
+import { sha1 } from "@noble/hashes/legacy.js";
+import { wrapDek, unwrapDek } from "./dek.ts";
+
+/** z-base-32 alphabet (RFC 6189 / WKD). */
+const ZBASE32 = "ybndrfg8ejkmcpqxot1uwisza345h769";
+
+export function zbase32Encode(bytes: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let out = "";
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += ZBASE32[(value >>> (bits - 5)) & 31]!;
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += ZBASE32[(value << (5 - bits)) & 31]!;
+  return out;
+}
+
+/** WKD "hu" path segment for a mailbox local-part (lowercase). */
+export function wkdHuHash(localPart: string): string {
+  const normalized = localPart.trim().toLowerCase();
+  return zbase32Encode(sha1(new TextEncoder().encode(normalized)));
+}
+
+export type OpenPgpIdentity = {
+  publicArmored: string;
+  privateArmored: string;
+  email: string;
+};
+
+/** Generate a Curve25519 OpenPGP identity for SMTP E2EE (WKD / Proton). */
+export async function generateOpenPgpIdentity(email: string): Promise<OpenPgpIdentity> {
+  // Legacy Curve25519 (v4) for broad client support (Proton, etc.).
+  // OpenPGP.js v6 renamed the curve to curve25519Legacy; type:'curve25519' is the newer format.
+  const { privateKey, publicKey } = await openpgp.generateKey({
+    type: "ecc",
+    curve: "curve25519Legacy",
+    userIDs: [{ name: email.split("@")[0] || "user", email }],
+    format: "armored",
+  });
+  return { publicArmored: publicKey, privateArmored: privateKey, email };
+}
+
+/** Wrap OpenPGP private key bytes with the DEK private (AES-GCM via wrapDek). */
+export function wrapOpenPgpPrivate(privateArmored: string, dekPrivate: Uint8Array): Uint8Array {
+  return wrapDek(new TextEncoder().encode(privateArmored), dekPrivate);
+}
+
+export function unwrapOpenPgpPrivate(wrapped: Uint8Array, dekPrivate: Uint8Array): string {
+  return new TextDecoder().decode(unwrapDek(wrapped, dekPrivate));
+}
+
+export async function readOpenPgpPublic(armored: string): Promise<openpgp.PublicKey> {
+  return openpgp.readKey({ armoredKey: armored });
+}
+
+export async function readOpenPgpPrivate(armored: string): Promise<openpgp.PrivateKey> {
+  return openpgp.readPrivateKey({ armoredKey: armored });
+}
+
+/** Encrypt a UTF-8 MIME/RFC822 message for an OpenPGP recipient (binary message). */
+export async function encryptForOpenPgp(
+  plaintextRfc822: string,
+  recipientPublicArmored: string,
+): Promise<Uint8Array> {
+  const publicKey = await readOpenPgpPublic(recipientPublicArmored);
+  const message = await openpgp.createMessage({ text: plaintextRfc822 });
+  const encrypted = await openpgp.encrypt({
+    message,
+    encryptionKeys: publicKey,
+    format: "binary",
+  });
+  return encrypted instanceof Uint8Array ? encrypted : new Uint8Array(encrypted as ArrayBuffer);
+}
+
+/** Decrypt an OpenPGP binary or armored message to UTF-8 text. */
+export async function decryptOpenPgp(
+  ciphertext: Uint8Array | string,
+  privateArmored: string,
+): Promise<string> {
+  const privateKey = await readOpenPgpPrivate(privateArmored);
+  const message =
+    typeof ciphertext === "string"
+      ? await openpgp.readMessage({ armoredMessage: ciphertext })
+      : await openpgp.readMessage({ binaryMessage: ciphertext });
+  const { data } = await openpgp.decrypt({
+    message,
+    decryptionKeys: privateKey,
+    format: "utf8",
+  });
+  return String(data);
+}
+
+export function looksLikeOpenPgpMessage(rfc822: string): boolean {
+  if (/-----BEGIN PGP MESSAGE-----/.test(rfc822)) return true;
+  if (/Content-Type:\s*multipart\/encrypted/i.test(rfc822)) return true;
+  if (/protocol="?application\/pgp-encrypted"?/i.test(rfc822)) return true;
+  return false;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * Build a minimal RFC822 that carries OpenPGP-encrypted MIME (PGP/MIME).
+ * `encryptedBody` is the binary OpenPGP message (as bytes), base64-encoded in the part.
+ */
+export function wrapPgpMime(encryptedBinary: Uint8Array, from: string, to: string, subject: string): string {
+  const boundary = `oe-pgp-${Date.now().toString(36)}`;
+  const raw = bytesToBase64(encryptedBinary);
+  const b64 = raw.replace(/(.{76})/g, "$1\r\n");
+  return [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: application/pgp-encrypted",
+    "",
+    "Version: 1",
+    `--${boundary}`,
+    "Content-Type: application/octet-stream; name=\"encrypted.asc\"",
+    "Content-Disposition: inline; filename=\"encrypted.asc\"",
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64,
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+}
+
+/** Extract OpenPGP ciphertext bytes from a PGP/MIME or armored RFC822. */
+export async function extractOpenPgpCiphertext(rfc822: string): Promise<Uint8Array | string> {
+  if (/-----BEGIN PGP MESSAGE-----/.test(rfc822)) {
+    const start = rfc822.indexOf("-----BEGIN PGP MESSAGE-----");
+    const end = rfc822.indexOf("-----END PGP MESSAGE-----");
+    if (start >= 0 && end > start) {
+      return rfc822.slice(start, end + "-----END PGP MESSAGE-----".length);
+    }
+  }
+  const b64Match = rfc822.match(
+    /Content-Type:\s*application\/octet-stream[\s\S]*?Content-Transfer-Encoding:\s*base64\r?\n\r?\n([\s\S]*?)(?:\r?\n--|\r?\n$)/i,
+  );
+  if (b64Match?.[1]) {
+    const cleaned = b64Match[1].replace(/\s+/g, "");
+    return base64ToBytes(cleaned);
+  }
+  throw new Error("OpenPGP ciphertext not found");
+}

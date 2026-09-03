@@ -28,6 +28,8 @@ type Props = {
   onError: (message: string) => void;
   onSend: () => void;
   onClose: () => void;
+  /** null = unknown, true = WKD key found for last send attempt / preview */
+  recipientE2ee?: boolean | null;
 };
 
 const MODE_KEYS: Record<ComposeMode, MessageKey> = {
@@ -55,6 +57,7 @@ export function ComposeModal({
   onError,
   onSend,
   onClose,
+  recipientE2ee = null,
 }: Props) {
   const t = useT();
   const [uploading, setUploading] = useState(false);
@@ -162,6 +165,10 @@ export function ComposeModal({
           <p className="shrink-0 px-4 py-2 text-sm text-destructive" role="alert">
             {error}
           </p>
+        ) : recipientE2ee === true ? (
+          <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t("compose.e2ee")}</p>
+        ) : recipientE2ee === false ? (
+          <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t("compose.notE2ee")}</p>
         ) : null}
         <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <label className="flex cursor-pointer items-center gap-2 text-xs text-primary underline">
